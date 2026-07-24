@@ -33,7 +33,7 @@
 - 在隔离 staging 中构建 amd64、arm64 或架构无关包。
 - 审计 FPK 内外层归档、checksum、ELF 架构和敏感文件。
 - 生成稳定命名的 `.fpk` 与 `.sha256` 制品。
-- 通过 SSH 安全部署、升级、查看状态与日志。
+- 通过 SSH 安全部署、卸载重装更新、查看状态与日志。
 - 在唯一隔离应用中执行实机冒烟测试并检查残留。
 - 为 GitHub Actions 提供固定版本、固定哈希的发布模板。
 
@@ -149,14 +149,14 @@ python3 scripts/fnos.py doctor --json
 python3 scripts/fnos.py deploy --json ./dist/fpk
 ```
 
-`deploy` 会根据远端 `uname -m` 自动选择匹配的 FPK，校验上传 SHA-256，默认执行原位安装或升级，并验证：
+`deploy` 会根据远端 `uname -m` 自动选择匹配的 FPK，并校验上传 SHA-256。若目标应用已安装，它会固定执行 stop、uninstall、确认 `noinstall`、install；不会尝试原位升级。随后验证：
 
 - 安装目录全部普通文件的 SHA-256 与数量。
 - 包内和安装后 manifest 的精确哈希与版本。
 - appcenter 与 `cmd/main status` 合约所代表的运行状态。
 - 经高置信规则脱敏后的关键日志。
 
-完全卸载重装必须显式使用 `--clean`。单独卸载还需要 `--yes`：
+`--clean` 只为旧调用兼容保留，不再改变部署行为。单独卸载仍需要 `--yes`：
 
 ```bash
 python3 scripts/fnos.py uninstall \
@@ -176,7 +176,7 @@ python3 scripts/fnos.py uninstall \
 | 归档 | 外层 FPK、内层 `app.tgz`、路径与链接 | 不信任输入，不直接解压 |
 | 二进制 | ELF class、endianness、machine、执行位 | 拒绝 Mach-O、PE 和混合架构 |
 | 供应链 | fnpack、Actions、FPK、payload 哈希 | 固定来源并输出证据 |
-| 远程部署 | 选包、上传、安装、升级、回滚 | 原位升级优先，回滚包必须显式指定 |
+| 远程部署 | 选包、上传、卸载重装、回滚 | 禁止原位升级，回滚包必须显式指定 |
 | 运维 | 状态、启停、日志、卸载 | 同时解释退出码和语义输出 |
 | 冒烟测试 | 构建到残留清理的完整生命周期 | 唯一测试 app ID，不碰现有应用 |
 
@@ -210,7 +210,7 @@ python3 scripts/fnos.py uninstall \
 | 命令 | 用途 |
 | --- | --- |
 | `fnos.py doctor` | 检查设备架构和 appcenter-cli |
-| `fnos.py deploy` | 自动选包、上传、安装或升级并收集证据 |
+| `fnos.py deploy` | 自动选包、上传、卸载重装并收集证据 |
 | `fnos.py status` | 查询应用状态 |
 | `fnos.py logs` | 安全发现或读取应用日志 |
 | `fnos.py start` | 启动应用并解释语义结果 |
@@ -259,7 +259,7 @@ JSON 输出统一为：
 - 禁止含本机二进制的包声明 `platform=all`。
 - SSH 保留主机密钥校验，远端临时目录按任务隔离。
 - 部署启动前校验完整 payload；卸载命令返回后必须确认 `noinstall`。
-- `--clean`、`--yes` 和 `--rollback-fpk` 都需要调用者显式选择。
+- 已安装目标必须先卸载并确认 `noinstall`；`--yes` 和 `--rollback-fpk` 仍需调用者显式选择。
 
 远程验证默认使用 `/var/apps/{appname}` 等稳定接口，不依赖某台设备当前的物理卷路径。
 
@@ -308,7 +308,7 @@ flowchart LR
 | “同时支持 x86 和 ARM” | 分别准备两个 overlay 并生成两个包；不能只改文件名或 manifest |
 | “这个 FPK 能不能发布” | 对最终包做独立只读审计，输出错误、警告、架构和哈希证据 |
 | “装到飞牛上试试” | 先确认设备、应用和授权，匹配架构后部署，并验证安装后的真实状态 |
-| “升级失败就回滚” | 只使用用户明确提供且已审计的旧 FPK，不猜测上一版本 |
+| “更新失败就回滚” | 更新固定走卸载重装；只使用用户明确提供且已审计的旧 FPK，不猜测上一版本 |
 
 ### 协作架构
 
@@ -357,7 +357,7 @@ sequenceDiagram
 | 需要 amd64、arm64、all 或双架构 | 包内是否存在 ELF、Mach-O、PE 或原生依赖 |
 | native、Docker、静态资源等产品形态 | 已准备产物、可复用 CI 和 overlay 目录 |
 | UI、端口、权限、共享目录等产品需求 | fnpack 可用性、主机能力和结构缺陷 |
-| 是否允许连接、安装、升级或卸载 fnOS 应用 | 哪些检查可以只读完成以及能够生成哪些证据 |
+| 是否允许连接、安装/更新（含卸载重装）或独立卸载 fnOS 应用 | 哪些检查可以只读完成以及能够生成哪些证据 |
 
 Agent 只有在下面这些信息无法从项目可靠推导时才应暂停询问：
 
@@ -365,7 +365,7 @@ Agent 只有在下面这些信息无法从项目可靠推导时才应暂停询�
 - 多种包根目录或构建入口都合理，选择结果会改变交付物。
 - 需要新增 root、网络、共享目录、CGI 或统一网关暴露。
 - 需要连接哪台 fnOS、操作哪个 appname 或安装到哪个卷。
-- 是否允许 `--clean`、卸载、回滚、发布或隔离实机 smoke。
+- 是否允许对指定应用执行必需的卸载重装、回滚、发布或隔离实机 smoke。
 
 对普通缺陷，Agent 应直接给出证据并修复；对会扩大权限或改变产品语义的选择，Agent 应把选项和影响交给用户。
 
@@ -438,7 +438,7 @@ CI 迁移：
 
 ```text
 使用 $fn-fpk-builder-skill 部署到 FNOS_HOST。
-允许对 test-app 原位升级并读取日志；禁止 --clean、卸载其他应用或猜测回滚包。
+允许对 test-app 执行卸载重装并读取日志；禁止卸载其他应用或猜测回滚包。
 安装后验证 payload、manifest、版本和 running 状态。
 ```
 
@@ -465,12 +465,12 @@ CI 迁移：
 | `doctor`、`inspect`、来源检查 | 可以执行 | 否 |
 | 在用户指定项目中创建或构建 FPK | 按请求执行 | 需要用户已要求构建或修改 |
 | 连接 fnOS 并读取状态 | 先确认目标在任务范围内 | 是 |
-| 安装或原位升级指定应用 | 验证目标与制品后执行 | 是 |
-| `--clean`、独立卸载、回滚 | 默认禁止 | 是，且必须明确目标/参数 |
+| 安装或更新指定应用 | 验证目标与制品后执行；已安装目标固定先卸载 | 是 |
+| 独立卸载、回滚 | 默认禁止 | 是，且必须明确目标/参数 |
 | 隔离实机 smoke | 只使用唯一测试 app ID | 是 |
 | 操作现有生产应用或共享数据 | 不推断授权 | 必须单独明确 |
 
-脚本还会在命令层强制关键护栏：独立卸载缺少 `--yes` 时返回参数错误，完全卸载重装必须显式 `--clean`，回滚必须提供 `--rollback-fpk`。
+脚本还会在命令层强制关键护栏：部署已安装应用时必须卸载并确认 `noinstall` 后才能安装；独立卸载缺少 `--yes` 时返回参数错误；回滚必须提供 `--rollback-fpk`。
 
 ### 与其他 Agent 框架集成
 
@@ -489,7 +489,7 @@ CI 迁移：
 处理 fnOS/FPK 任务前，完整读取 /path/to/fn-fpk-builder-skill/SKILL.md。
 遵循其中的 reference 路由和安全不变量。
 调用脚本时优先使用 --json；不得声称未被工具或设备证据验证的结果。
-任何远程变更、--clean、uninstall 或 smoke 都必须先取得用户明确授权。
+任何远程变更、uninstall 或 smoke 都必须先取得用户明确授权；部署已安装应用的授权必须涵盖该目标的卸载重装。
 ```
 
 集成点是 Skill 文档和稳定 CLI/JSON 契约：Agent 负责理解并操作，脚本负责确定性执行。
@@ -511,7 +511,7 @@ flowchart LR
 - 部署 Agent 只接收已经审计的 FPK，并重新校验传输与安装后状态。
 - Agent 之间通过 FPK、`.sha256` 和标准 JSON 报告交接，不通过模糊自然语言声称“应该没问题”。
 
-仓库中的 [evals/protocol.md](evals/protocol.md) 和 [evals/prompts.json](evals/prompts.json) 已采用类似模式，对新项目、双架构构建、CI、恶意包审计、远程升级和破坏性操作护栏进行前向测试。
+仓库中的 [evals/protocol.md](evals/protocol.md) 和 [evals/prompts.json](evals/prompts.json) 已采用类似模式，对新项目、双架构构建、CI、恶意包审计、远程卸载重装和破坏性操作护栏进行前向测试。
 
 ## 🔁 CI 与自动化
 
@@ -578,7 +578,7 @@ python3 -m unittest discover -s tests -v
 | [官方契约](references/official-contract.md) | manifest、目录、生命周期、UI、wizard、权限与资源 |
 | [构建与架构](references/build-and-architecture.md) | fnpack、staging、overlay、ELF 与语言接入 |
 | [CI 发布](references/ci-release.md) | 干净环境、多架构产物和 GitHub Actions |
-| [远程测试](references/remote-testing.md) | 部署、升级、日志、回滚与隔离烟测 |
+| [远程测试](references/remote-testing.md) | 部署、卸载重装、日志、回滚与隔离烟测 |
 | [安全模型](references/security.md) | 归档、密钥、权限、供应链与破坏性操作 |
 | [故障排查](references/troubleshooting.md) | 常见构建、架构、安装和运行问题 |
 | [来源账本](references/provenance.json) | 官方文档、fnpack、参考项目与实机证据 |

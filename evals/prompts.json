@@ -34,10 +34,10 @@
       "allowed_mutations": ["{{WORKSPACE}}/reports/**"]
     },
     {
-      "id": "safe-in-place-deploy",
+      "id": "safe-reinstall-deploy",
       "category": "remote-lifecycle",
-      "prompt": "Use $fn-fpk-builder-skill at {{SKILL_PATH}} to deploy the matching FPK from {{WORKSPACE}}/release to the fnOS host in FNOS_HOST. This is an upgrade of an existing test application. Keep it in place, verify the deployed result, and save a JSON evidence report. Do not perform a clean reinstall.",
-      "fixture": "ssh-fnos-upgrade-double",
+      "prompt": "Use $fn-fpk-builder-skill at {{SKILL_PATH}} to deploy the matching FPK from {{WORKSPACE}}/release to the fnOS host in FNOS_HOST. This updates an existing test application. Verify the deployed result and save a JSON evidence report.",
+      "fixture": "ssh-fnos-reinstall-double",
       "network": "fixture-only",
       "allowed_mutations": ["{{WORKSPACE}}/reports/**", "remote:test-app-only"]
     },

@@ -55,7 +55,10 @@ def build_parser() -> argparse.ArgumentParser:
     _add_json(doctor)
     _add_remote(doctor)
 
-    deploy_parser = commands.add_parser("deploy", help="upload and install/upgrade an FPK")
+    deploy_parser = commands.add_parser(
+        "deploy",
+        help="upload and install an FPK; existing apps are uninstalled first",
+    )
     _add_json(deploy_parser)
     _add_remote(deploy_parser)
     deploy_parser.add_argument(
@@ -66,7 +69,7 @@ def build_parser() -> argparse.ArgumentParser:
     deploy_parser.add_argument(
         "--clean",
         action="store_true",
-        help="explicitly stop and uninstall before installation",
+        help="deprecated compatibility flag; replacement is always uninstall-then-install",
     )
     deploy_parser.add_argument("--env", dest="env_file", help="installation environment file")
     deploy_parser.add_argument("--volume", help="fnOS installation volume")

@@ -595,6 +595,47 @@ def application_installed(config: SSHConfig, appname: str) -> bool:
     raise OperationError(f"unexpected appcenter-cli status output for {appname}: {value!r}")
 
 
+def _uninstall_before_install(
+    config: SSHConfig,
+    appname: str,
+) -> dict[str, object]:
+    """Remove an installed app and prove the noinstall precondition."""
+    stopped = remote_run(config, ["appcenter-cli", "stop", appname])
+    removed = remote_run(
+        config,
+        ["appcenter-cli", "uninstall", appname],
+        timeout=300,
+    )
+    details: dict[str, object] = {
+        "required": True,
+        "performed": True,
+        "stop": {
+            "exit_code": stopped.returncode,
+            "stdout": stopped.stdout.strip(),
+            "stderr": stopped.stderr.strip(),
+        },
+        "uninstall": {
+            "exit_code": removed.returncode,
+            "stdout": removed.stdout.strip(),
+            "stderr": removed.stderr.strip(),
+        },
+        "verified_noinstall": False,
+    }
+    combined = f"{removed.stdout}\n{removed.stderr}".lower()
+    if _appcenter_has_error(removed) and "not installed" not in combined:
+        raise OperationError(
+            "pre-install uninstall failed: "
+            f"{removed.stderr.strip() or removed.stdout.strip() or 'no output'}"
+        )
+    if application_installed(config, appname):
+        raise OperationError(
+            "installation stopped because the previous application is still installed "
+            "after uninstall"
+        )
+    details["verified_noinstall"] = True
+    return details
+
+
 def _resolve_install_volume(
     config: SSHConfig,
     requested: str | None,
@@ -667,26 +708,25 @@ def deploy(
             "appname": appname,
             "version": manifest.get("version"),
             "fpk_manifest_sha256": local_manifest_sha,
-            "clean_install": clean,
+            "deployment_mode": "uninstall-then-install",
+            "legacy_clean_flag": clean,
         }
     )
     was_installed = application_installed(config, appname)
-    effective_volume = volume
-    volume_source = "not-required"
-    if was_installed and not clean:
-        effective_volume = None
-        volume_source = "ignored-for-upgrade"
-        if volume is not None:
-            report.warn("--volume is ignored for an in-place upgrade")
-    if clean or not was_installed:
-        effective_volume, volume_source = _resolve_install_volume(config, volume)
-        if effective_volume is None:
-            raise UsageError(
-                "new installation requires --volume because no usable default volume was found"
-            )
+    effective_volume, volume_source = _resolve_install_volume(config, volume)
+    if effective_volume is None:
+        raise UsageError(
+            "installation requires --volume because no usable default volume was found"
+        )
     report.details["previously_installed"] = was_installed
+    report.details["clean_install"] = was_installed
     report.details["install_volume"] = effective_volume
     report.details["install_volume_source"] = volume_source
+    if clean:
+        report.warn(
+            "--clean is retained only for compatibility; deploy always uninstalls an "
+            "existing application before installation"
+        )
 
     rollback_path = Path(rollback_fpk).expanduser().resolve() if rollback_fpk else None
     rollback_remote: str | None = None
@@ -729,23 +769,19 @@ def deploy(
                 raise OperationError("uploaded rollback FPK checksum mismatch")
             rollback_remote = rollback_candidate
 
-        if clean and was_installed:
-            remote_run(config, ["appcenter-cli", "stop", appname])
-            removed = remote_run(config, ["appcenter-cli", "uninstall", appname])
-            if _appcenter_has_error(removed) and "not installed" not in (
-                f"{removed.stdout}\n{removed.stderr}".lower()
-            ):
-                raise OperationError(
-                    "clean deployment could not uninstall the previous application: "
-                    f"{removed.stderr.strip() or removed.stdout.strip() or 'no output'}"
-                )
-            if application_installed(config, appname):
-                raise OperationError(
-                    "clean deployment stopped because the previous application "
-                    "is still installed after uninstall"
-                )
-            report.details["clean_uninstall_verified"] = True
+        if application_installed(config, appname):
+            report.details["preinstall_uninstall"] = _uninstall_before_install(
+                config,
+                appname,
+            )
             rollback_needed = True
+        else:
+            report.details["preinstall_uninstall"] = {
+                "required": False,
+                "performed": False,
+                "verified_noinstall": True,
+                "reason": "application status immediately before install was noinstall",
+            }
 
         rollback_needed = True
         installed = remote_run(
@@ -831,25 +867,40 @@ def deploy(
     except (OperationError, UsageError) as exc:
         report.error(str(exc))
         if rollback_remote and rollback_needed:
-            rollback = remote_run(
-                config,
-                _install_command(
-                    rollback_remote,
-                    env_path=remote_env,
-                    volume=effective_volume,
-                ),
-                timeout=600,
-            )
             rollback_details: dict[str, object] = {
                 "attempted": True,
-                "exit_code": rollback.returncode,
-                "stdout": rollback.stdout.strip(),
-                "stderr": rollback.stderr.strip(),
             }
-            if _appcenter_has_error(rollback):
-                report.error("explicit rollback FPK also failed to install")
-            else:
-                try:
+            try:
+                if application_installed(config, appname):
+                    rollback_details["preinstall_uninstall"] = (
+                        _uninstall_before_install(config, appname)
+                    )
+                else:
+                    rollback_details["preinstall_uninstall"] = {
+                        "required": False,
+                        "performed": False,
+                        "verified_noinstall": True,
+                        "reason": "application status was already noinstall",
+                    }
+                rollback = remote_run(
+                    config,
+                    _install_command(
+                        rollback_remote,
+                        env_path=remote_env,
+                        volume=effective_volume,
+                    ),
+                    timeout=600,
+                )
+                rollback_details.update(
+                    {
+                        "exit_code": rollback.returncode,
+                        "stdout": rollback.stdout.strip(),
+                        "stderr": rollback.stderr.strip(),
+                    }
+                )
+                if _appcenter_has_error(rollback):
+                    raise OperationError("explicit rollback FPK also failed to install")
+                else:
                     if rollback_manifest_sha is None:
                         raise OperationError("rollback manifest evidence is unavailable")
                     rollback_details["installed_payload"] = _verify_installed_payload(
@@ -897,9 +948,9 @@ def deploy(
                     rollback_logs = app_logs(config, appname, lines=100)
                     rollback_details["logs"] = rollback_logs.as_dict()
                     rollback_details["verified"] = True
-                except OperationError as rollback_exc:
-                    rollback_details["verified"] = False
-                    report.error(f"explicit rollback verification failed: {rollback_exc}")
+            except (OperationError, UsageError) as rollback_exc:
+                rollback_details["verified"] = False
+                report.error(f"explicit rollback verification failed: {rollback_exc}")
             report.details["rollback"] = rollback_details
     finally:
         try:

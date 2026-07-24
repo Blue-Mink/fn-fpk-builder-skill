@@ -93,7 +93,9 @@ tail -n 200 /var/log/trim_app_center/error.log
 
 错误码 10111 可能包含具体 manifest 约束。例如已观测到 appname 长度必须为 3–32。以同一时间点的 appcenter error.log 为证据，不要只保留数字错误码。
 
-检查平台、系统最低版本、安装卷、端口、依赖应用和向导 env。不要先卸载旧应用再诊断，除非用户明确选择 clean 流程。
+检查平台、系统最低版本、安装卷、端口、依赖应用和向导 env。部署前先完成本地审计、上传与哈希核对；目标已安装时必须卸载并确认 `noinstall`，不得用直接覆盖安装来诊断或更新。
+
+安装失败后先查状态。若失败过程留下 running、stopped 或其他已安装状态，重试新包或安装回滚包前都必须再次卸载并确认 `noinstall`。
 
 ### 一直是 `starting`
 
@@ -169,9 +171,9 @@ CGI 不支持 WebSocket。使用统一网关或独立端口，并确保 WebSocke
 
 检查 `run-as`、文件所有者、执行位、用户授权路径、data-share ACL 和必要的 `join-groups`。不要把切换到 root 当成首选修复。
 
-### 升级后数据丢失
+### 卸载重装后数据丢失
 
-持久数据应位于 `TRIM_PKGETC`、`TRIM_PKGVAR`、`TRIM_PKGHOME` 或声明的 share，而不是 `TRIM_APPDEST`。检查升级脚本是否幂等以及 clean uninstall 是否被误用。
+持久数据应位于 `TRIM_PKGETC`、`TRIM_PKGVAR`、`TRIM_PKGHOME` 或声明的 share，而不是 `TRIM_APPDEST`。实机更新固定走卸载重装，因此应检查 uninstall 生命周期的数据保留行为，不得依赖原位升级脚本保留状态。
 
 ### 生命周期错误在 UI 中不可读
 

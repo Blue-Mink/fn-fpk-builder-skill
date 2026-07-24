@@ -111,7 +111,7 @@ ICON_256.PNG
 `cmd/` 可包含：
 
 - `install_init`、`install_callback`
-- `upgrade_init`、`upgrade_callback`
+- `upgrade_init`、`upgrade_callback`（这些是官方包结构名称；本 Skill 的实机更新仍固定执行卸载后安装，不调用原位升级路径）
 - `uninstall_init`、`uninstall_callback`
 - `config_init`、`config_callback`
 - `main`
@@ -204,7 +204,7 @@ CGI 入口：
 - PNG 或 JPG、sRGB、单文件不超过 1024 KB。
 - 入口使用 `images/icon_{0}.png` 时，相应 64 和 256 图标必须存在。
 
-发布前至少覆盖首次安装、升级、启动、停止、重启、卸载保留/删除数据、权限拒绝、依赖不可用、资源不足及所有声明架构。
+发布前至少覆盖首次安装、卸载后安装新版本、启动、停止、重启、卸载保留/删除数据、权限拒绝、依赖不可用、资源不足及所有声明架构。
 
 ## CLI 契约
 

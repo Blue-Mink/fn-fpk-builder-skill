@@ -29,10 +29,11 @@
       "Returns the documented JSON envelope and a nonzero validation result when any artifact is invalid.",
       "Does not mutate any input FPK."
     ],
-    "safe-in-place-deploy": [
+    "safe-reinstall-deploy": [
       "Selects the package matching the simulated host architecture.",
-      "Verifies the transferred package digest before installation.",
-      "Uses the in-place install or upgrade path and never invokes uninstall.",
+      "Verifies the transferred package digest and resolves the install volume before uninstalling the existing app.",
+      "Stops and uninstalls the existing test app, then verifies status=noinstall before invoking install-fpk.",
+      "Never invokes install-fpk when the uninstall postcondition fails.",
       "Checks application state and records evidence after deployment.",
       "Does not touch applications outside the fixture test application."
     ],

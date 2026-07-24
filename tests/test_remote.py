@@ -299,7 +299,7 @@ class RemoteSafetyTests(unittest.TestCase):
                 report.details["fpk_manifest_sha256"],
             )
 
-    def test_clean_deploy_stops_if_uninstall_postcondition_fails(self) -> None:
+    def test_replacement_stops_if_uninstall_postcondition_fails(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             package = create_fpk(Path(temporary) / "fixture.fpk")
             commands: list[list[str]] = []
@@ -320,7 +320,7 @@ class RemoteSafetyTests(unittest.TestCase):
                 ),
             ), patch(
                 "scripts.fpk_lib.remote.application_installed",
-                side_effect=(True, True),
+                side_effect=(True, True, True),
             ), patch(
                 "scripts.fpk_lib.remote.remote_run",
                 side_effect=run,
@@ -333,13 +333,98 @@ class RemoteSafetyTests(unittest.TestCase):
                 report = deploy(
                     SSHConfig("root@example.invalid"),
                     [package],
-                    clean=True,
                     volume="1",
                 )
             self.assertFalse(report.ok)
             self.assertTrue(any("still installed" in item for item in report.errors))
             self.assertFalse(
                 any(command[:2] == ["appcenter-cli", "install-fpk"] for command in commands)
+            )
+
+    def test_existing_app_is_always_uninstalled_before_install(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            package = create_fpk(Path(temporary) / "fixture.fpk")
+            commands: list[list[str]] = []
+            events: list[tuple[str, ...]] = []
+
+            def run(_config, argv, **_kwargs):
+                commands.append(argv)
+                events.append(tuple(argv[:2]))
+                if argv[:2] == ["appcenter-cli", "status"]:
+                    return RemoteResult("status", 0, "running\n", "")
+                return RemoteResult(" ".join(argv), 0, "[Info]complete\n", "")
+
+            def copy(_config, _local, _remote_path):
+                events.append(("upload",))
+
+            def remote_digest(_config, _remote_path):
+                events.append(("remote-sha256",))
+                return sha256_file(package)
+
+            with patch(
+                "scripts.fpk_lib.remote.remote_architecture",
+                return_value=("amd64", "x86_64"),
+            ), patch(
+                "scripts.fpk_lib.remote.select_artifact",
+                return_value=(
+                    package,
+                    {"appname": "fixture-app", "version": "1.2.3", "platform": "all"},
+                    Report(),
+                ),
+            ), patch(
+                "scripts.fpk_lib.remote.application_installed",
+                side_effect=(True, True, False),
+            ), patch(
+                "scripts.fpk_lib.remote.remote_run",
+                side_effect=run,
+            ), patch(
+                "scripts.fpk_lib.remote.remote_copy",
+                side_effect=copy,
+            ), patch(
+                "scripts.fpk_lib.remote._remote_sha256",
+                side_effect=remote_digest,
+            ), patch(
+                "scripts.fpk_lib.remote._verify_installed_payload",
+                return_value={"verified_regular_files": 1},
+            ), patch(
+                "scripts.fpk_lib.remote._verify_installed_manifest",
+                return_value={"matches_fpk": True},
+            ), patch(
+                "scripts.fpk_lib.remote.app_logs",
+                return_value=Report(details={"logs": "ready"}),
+            ):
+                report = deploy(
+                    SSHConfig("root@example.invalid"),
+                    [package],
+                    volume="1",
+                )
+
+            self.assertTrue(report.ok, report.errors)
+            stop_index = next(
+                index
+                for index, command in enumerate(commands)
+                if command[:2] == ["appcenter-cli", "stop"]
+            )
+            uninstall_index = next(
+                index
+                for index, command in enumerate(commands)
+                if command[:2] == ["appcenter-cli", "uninstall"]
+            )
+            install_index = next(
+                index
+                for index, command in enumerate(commands)
+                if command[:2] == ["appcenter-cli", "install-fpk"]
+            )
+            self.assertLess(stop_index, uninstall_index)
+            self.assertLess(uninstall_index, install_index)
+            self.assertLess(
+                events.index(("remote-sha256",)),
+                events.index(("appcenter-cli", "uninstall")),
+            )
+            self.assertEqual("uninstall-then-install", report.details["deployment_mode"])
+            self.assertEqual("explicit", report.details["install_volume_source"])
+            self.assertTrue(
+                report.details["preinstall_uninstall"]["verified_noinstall"]
             )
 
     def test_successful_rollback_verifies_status_and_installed_manifest(self) -> None:
@@ -384,7 +469,7 @@ class RemoteSafetyTests(unittest.TestCase):
                 ),
             ), patch(
                 "scripts.fpk_lib.remote.application_installed",
-                return_value=True,
+                side_effect=(True, True, False, True, False),
             ), patch(
                 "scripts.fpk_lib.remote.remote_run",
                 side_effect=run,
@@ -407,9 +492,15 @@ class RemoteSafetyTests(unittest.TestCase):
                     SSHConfig("root@example.invalid"),
                     [package],
                     rollback_fpk=rollback,
+                    volume="1",
                 )
             self.assertFalse(report.ok)
             self.assertTrue(report.details["rollback"]["verified"])
+            self.assertTrue(
+                report.details["rollback"]["preinstall_uninstall"][
+                    "verified_noinstall"
+                ]
+            )
             self.assertEqual("running", report.details["rollback"]["status"]["stdout"])
             self.assertEqual(
                 installed_manifest,

@@ -1,6 +1,6 @@
 ---
 name: fn-fpk-builder-skill
-description: Build, validate, inspect, release, install, upgrade, troubleshoot, and safely remove fnOS/飞牛 OS FPK application packages. Use when Codex works with fnpack, appcenter-cli, .fpk archives, fnOS manifests, native or Docker app templates, x86_64/ARM64 packaging, GitHub Actions release pipelines, or SSH-based deployment and smoke testing on a fnOS device.
+description: Build, validate, inspect, release, install, replace, troubleshoot, and safely remove fnOS/飞牛 OS FPK application packages. Use when Codex works with fnpack, appcenter-cli, .fpk archives, fnOS manifests, native or Docker app templates, x86_64/ARM64 packaging, GitHub Actions release pipelines, or SSH-based deployment and smoke testing on a fnOS device.
 ---
 
 # fnOS FPK Builder
@@ -19,7 +19,7 @@ python3 "$SKILL_DIR/scripts/fpk.py" --help
 1. Read [references/official-contract.md](references/official-contract.md) before creating or changing an fnOS package structure, manifest, lifecycle script, wizard, privilege, resource, UI entry, CGI, or gateway configuration.
 2. Read [references/build-and-architecture.md](references/build-and-architecture.md) before cross-building, applying architecture overlays, choosing `platform`, or packaging Go, Rust, Node, Python, Docker, or other native dependencies.
 3. Read [references/ci-release.md](references/ci-release.md) before authoring or changing release automation. Start from `assets/github-actions/fpk.yml` when it fits the project.
-4. Read [references/remote-testing.md](references/remote-testing.md) before connecting to a device, installing, upgrading, rolling back, collecting logs, or running smoke tests.
+4. Read [references/remote-testing.md](references/remote-testing.md) before connecting to a device, installing, replacing, rolling back, collecting logs, or running smoke tests.
 5. Read [references/security.md](references/security.md) before accepting root privilege, CGI/gateway exposure, secrets, symlinks, or unusual archive content.
 6. Read [references/troubleshooting.md](references/troubleshooting.md) only when a command, build, install, start, or validation step fails.
 
@@ -72,7 +72,7 @@ Use `--json` on every command when results need to be consumed by an agent or CI
 - Stage a copy and rewrite only the staged manifest. Never mutate source manifests or prepared artifacts during packaging.
 - Use fnOS runtime variables such as `TRIM_APPDEST`, `TRIM_PKGETC`, and `TRIM_PKGVAR`. Use `/var/apps/{appname}` only as the stable installed entry point when a variable is unavailable.
 - Warn on root privilege and broad network/file exposure. Do not silently downgrade declared privileges.
-- Default remote deployment to in-place install/upgrade. Require explicit `--clean` for uninstall-first deployment and `--yes` for standalone uninstall.
+- Never install an FPK over an installed app. For every redeploy or update, stop the target, uninstall it, verify `status=noinstall`, and only then call `install-fpk`; abort if the uninstall postcondition fails. Treat `--clean` only as a deprecated compatibility flag. Require `--yes` for standalone uninstall.
 - Never disable SSH host-key verification or print environment-file contents.
 - Use a uniquely named `fpk-skill-smoke-*` package for smoke tests. Never repurpose an existing application as the test fixture.
 
@@ -93,7 +93,7 @@ Remote fnOS operations:
 
 ```text
 python3 "$SKILL_DIR/scripts/fnos.py" doctor     Inspect device architecture and CLI versions
-python3 "$SKILL_DIR/scripts/fnos.py" deploy     Select, upload, verify, install/upgrade, and verify
+python3 "$SKILL_DIR/scripts/fnos.py" deploy     Select, upload, verify, uninstall/reinstall, and verify
 python3 "$SKILL_DIR/scripts/fnos.py" status     Query application status
 python3 "$SKILL_DIR/scripts/fnos.py" logs       Discover or tail application-owned logs
 python3 "$SKILL_DIR/scripts/fnos.py" start      Start an installed application

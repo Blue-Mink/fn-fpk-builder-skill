@@ -25,8 +25,8 @@
     },
     {
       "case": "safe-in-place-deploy",
-      "result": "pass",
-      "evidence": "SSH-double tests selected the matching architecture, verified transfer digest, avoided uninstall by default, and checked post-install state and manifest hash."
+      "result": "superseded",
+      "evidence": "The prior in-place behavior was invalidated by the confirmed fnOS overwrite-install defect. Current evaluation is safe-reinstall-deploy."
     },
     {
       "case": "destructive-guard",
