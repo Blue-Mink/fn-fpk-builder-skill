@@ -1,0 +1,178 @@
+# Copy this file to .github/workflows/fpk.yml in the application repository,
+# then adjust the three FPK_* paths below. The prepare script contract is:
+#   prepare-fpk-overlay.sh <amd64|arm64> <empty-output-directory>
+# It must copy only architecture-specific, already-built files into the output.
+name: Build fnOS FPK
+
+on:
+  push:
+    tags:
+      - "fpk-v*"
+  workflow_dispatch:
+    inputs:
+      project_dir:
+        description: Directory containing the fnOS package project
+        required: true
+        default: packaging/fnos
+        type: string
+      version:
+        description: Optional manifest version override
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fpk-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # Repository-local, trusted paths. Change these after copying the template.
+  FPK_PROJECT_DIR: ${{ inputs.project_dir || 'packaging/fnos' }}
+  FPK_PREPARE_SCRIPT: scripts/prepare-fpk-overlay.sh
+  FPK_SKILL_DIR: tools/fn-fpk-builder-skill
+  FNPACK_VERSION: "1.2.3"
+  FNPACK_LINUX_AMD64_SHA256: "54b97fa7b70968c4d05c79840f5daeff508957d0bb2062fdb0376d00d9615c93"
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  prepare:
+    name: Prepare ${{ matrix.arch }} payload
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Prepare architecture overlay
+        shell: bash
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+          OVERLAY_DIR: ${{ runner.temp }}/prepared/overlay
+        run: |
+          set -euo pipefail
+          test -f "${FPK_PREPARE_SCRIPT}"
+          mkdir -p "${OVERLAY_DIR}"
+          bash "${FPK_PREPARE_SCRIPT}" "${TARGET_ARCH}" "${OVERLAY_DIR}"
+          test -n "$(find "${OVERLAY_DIR}" -mindepth 1 -print -quit)"
+          PYTHONPATH="${FPK_SKILL_DIR}/scripts" python3 -m fpk_lib.ci_overlay \
+            create \
+            --overlay "${OVERLAY_DIR}" \
+            --metadata "${RUNNER_TEMP}/prepared/overlay-metadata.json" \
+            --arch "${TARGET_ARCH}"
+
+      - name: Upload prepared overlay
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fpk-overlay-${{ matrix.arch }}
+          path: ${{ runner.temp }}/prepared/
+          if-no-files-found: error
+          include-hidden-files: true
+          retention-days: 7
+
+  assemble:
+    name: Assemble and inspect FPKs
+    needs: prepare
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Download prepared overlays
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: fpk-overlay-*
+          path: downloaded-overlays
+
+      - name: Restore prepared overlays
+        shell: bash
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64; do
+            mkdir -p "dist/fpk-overlays/${arch}"
+            source="downloaded-overlays/fpk-overlay-${arch}"
+            test -d "${source}"
+            PYTHONPATH="${FPK_SKILL_DIR}/scripts" python3 -m fpk_lib.ci_overlay \
+              restore \
+              --artifact-root "${source}" \
+              --destination "dist/fpk-overlays/${arch}" \
+              --arch "${arch}"
+          done
+
+      - name: Install verified fnpack
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error \
+            "https://static2.fnnas.com/fnpack/fnpack-${FNPACK_VERSION}-linux-amd64" \
+            --output "${RUNNER_TEMP}/fnpack"
+          printf '%s  %s\n' \
+            "${FNPACK_LINUX_AMD64_SHA256}" \
+            "${RUNNER_TEMP}/fnpack" | sha256sum --check
+          chmod 755 "${RUNNER_TEMP}/fnpack"
+
+      - name: Build architecture-specific FPKs
+        shell: bash
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          test -f "${FPK_SKILL_DIR}/scripts/fpk.py"
+          args=(
+            build
+            --project "${FPK_PROJECT_DIR}"
+            --out dist/fpk
+            --arch both
+            --overlay-amd64 dist/fpk-overlays/amd64
+            --overlay-arm64 dist/fpk-overlays/arm64
+            --fnpack "${RUNNER_TEMP}/fnpack"
+          )
+          if [ -n "${REQUESTED_VERSION}" ]; then
+            args+=(--version "${REQUESTED_VERSION}")
+          fi
+          python3 "${FPK_SKILL_DIR}/scripts/fpk.py" "${args[@]}"
+
+      - name: Inspect final packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          mkdir -p dist/fpk/audit
+          amd64=(dist/fpk/*-fnos-amd64.fpk)
+          arm64=(dist/fpk/*-fnos-arm64.fpk)
+          [ "${#amd64[@]}" -eq 1 ]
+          [ "${#arm64[@]}" -eq 1 ]
+          python3 "${FPK_SKILL_DIR}/scripts/fpk.py" \
+            inspect "${amd64[0]}" --target-arch amd64 --json \
+            > dist/fpk/audit/amd64.json
+          python3 "${FPK_SKILL_DIR}/scripts/fpk.py" \
+            inspect "${arm64[0]}" --target-arch arm64 --json \
+            > dist/fpk/audit/arm64.json
+
+      - name: Upload verified FPKs
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fnos-fpk
+          path: |
+            dist/fpk/*.fpk
+            dist/fpk/*.sha256
+            dist/fpk/audit/*.json
+          if-no-files-found: error
+          retention-days: 14

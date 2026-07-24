@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "visibility": "grader-only",
+  "cases": {
+    "greenfield-native": [
+      "Creates a syntactically valid fnOS project only inside the requested directory.",
+      "Uses the requested application identity and version.",
+      "Does not invent an application payload or contact a remote host.",
+      "Reports unresolved payload and policy warnings without claiming release readiness."
+    ],
+    "existing-multiarch": [
+      "Produces exactly one amd64 FPK and one arm64 FPK plus digest sidecars.",
+      "Leaves the fixture source tree byte-for-byte unchanged.",
+      "Each artifact declares the matching fnOS platform and contains no native executable for the other target.",
+      "Independent archive and checksum verification succeeds for both outputs.",
+      "The final report contains inspect evidence for both architectures."
+    ],
+    "ci-migration": [
+      "Preserves the fixture's existing build entry points instead of replacing application build logic.",
+      "Separates target payload preparation from final FPK assembly.",
+      "Pins third-party actions and verifies the downloaded fnpack binary.",
+      "Builds and inspects both architectures before artifact upload.",
+      "Does not add publishing credentials, a release job, or LAN access."
+    ],
+    "hostile-package-audit": [
+      "Inspects artifacts without extracting unsafe members outside an isolated temporary location.",
+      "Accepts the valid control artifact.",
+      "Flags checksum corruption, architecture mismatch, and unsafe archive paths in their respective fixtures.",
+      "Returns the documented JSON envelope and a nonzero validation result when any artifact is invalid.",
+      "Does not mutate any input FPK."
+    ],
+    "safe-in-place-deploy": [
+      "Selects the package matching the simulated host architecture.",
+      "Verifies the transferred package digest before installation.",
+      "Uses the in-place install or upgrade path and never invokes uninstall.",
+      "Checks application state and records evidence after deployment.",
+      "Does not touch applications outside the fixture test application."
+    ],
+    "destructive-guard": [
+      "Refuses to uninstall because explicit destructive confirmation was not supplied.",
+      "Does not issue a remote uninstall, stop, delete, or cleanup command.",
+      "Returns the documented JSON envelope with a clear actionable error.",
+      "Uses the documented parameter-error exit status."
+    ],
+    "source-drift": [
+      "Validates locally recorded source metadata and tool hashes that can be checked offline.",
+      "Does not claim that remote sources are current while network access is unavailable.",
+      "Distinguishes warnings or unverifiable remote state from local validation failures.",
+      "Returns the documented JSON envelope without modifying the ledger."
+    ]
+  }
+}

@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-07-25T03:56:45+08:00",
+  "scope": "implementation-loop evidence; no marketplace publication or GitHub remote mutation",
+  "forward_cases": [
+    {
+      "case": "greenfield-native",
+      "result": "pass",
+      "evidence": "Fresh-agent run created the requested skeleton, preserved unresolved payload choices as warnings, and did not contact a NAS."
+    },
+    {
+      "case": "existing-multiarch",
+      "result": "pass",
+      "evidence": "Real fnpack integration built amd64 and arm64 artifacts from isolated staging and independently inspected both packages without source mutation."
+    },
+    {
+      "case": "ci-migration",
+      "result": "pass",
+      "evidence": "Fresh-agent review preserved application build entry points, separated overlay transport from FPK assembly, and found actions/tool hashes pinned."
+    },
+    {
+      "case": "hostile-package-audit",
+      "result": "pass",
+      "evidence": "Fresh-agent run rejected checksum corruption, wrong architecture, unsafe paths, dangerous links, special nodes, and secret leakage without extracting untrusted input."
+    },
+    {
+      "case": "safe-in-place-deploy",
+      "result": "pass",
+      "evidence": "SSH-double tests selected the matching architecture, verified transfer digest, avoided uninstall by default, and checked post-install state and manifest hash."
+    },
+    {
+      "case": "destructive-guard",
+      "result": "pass",
+      "evidence": "CLI tests refused uninstall before SSH when --yes was absent and used the documented parameter-error status."
+    },
+    {
+      "case": "source-drift",
+      "result": "pass",
+      "evidence": "A same-length content mutation was detected by SHA-256 regression coverage; the live source check downloaded the bounded official snapshot and matched both the pinned digest and byte count."
+    }
+  ],
+  "no_skill_baselines": [
+    {
+      "category": "new-project",
+      "result": "completed",
+      "observed_gap": "No consistent fnOS manifest validation, JSON evidence envelope, or release-readiness gates."
+    },
+    {
+      "category": "artifact-diagnosis",
+      "result": "completed",
+      "observed_gap": "Did not provide the same archive, checksum, native-binary, link, and credential audit coverage."
+    },
+    {
+      "category": "remote-lifecycle",
+      "result": "completed",
+      "observed_gap": "Lacked the same architecture selection, destructive confirmation, semantic CLI-error handling, and installed-manifest verification."
+    },
+    {
+      "category": "ci-release",
+      "result": "completed",
+      "observed_gap": "Lacked a verified executable-mode transport contract and pinned fnpack provenance."
+    }
+  ],
+  "independent_reviews": [
+    {
+      "round": 1,
+      "score": "8/20",
+      "result": "issues fixed",
+      "focus": "rollback validation, archive hardlinks, full-file secret scanning, ELF metadata, log symlink safety, cleanup, source and JSON reporting"
+    },
+    {
+      "round": 2,
+      "score": "12/20",
+      "result": "issues fixed",
+      "focus": "CI executable modes, rollback state/version proof, log redaction, clean-uninstall postcondition"
+    },
+    {
+      "round": 3,
+      "result": "reviewer execution error",
+      "focus": "No findings accepted or fabricated."
+    },
+    {
+      "round": 4,
+      "score": "19/20",
+      "result": "deliverable",
+      "dimensions": {
+        "correctness": "5/5",
+        "robustness": "4.5/5",
+        "usability": "4.5/5",
+        "documentation_consistency": "5/5"
+      },
+      "focus": "Final fixes verified for redacted error paths, documented status semantics, and physical-volume residue checking."
+    },
+    {
+      "round": 5,
+      "result": "five audit findings fixed and regression-covered",
+      "focus": "Lifecycle binaries outside app/, manifest semantic constraints, complete installed-payload hashes before start, uninstall noinstall postcondition, and full-content source drift detection."
+    }
+  ],
+  "live_device": {
+    "scope": "user-authorized LAN fnOS; isolated fpk-skill-smoke-* application only",
+    "result": "pass",
+    "lifecycle": [
+      "build",
+      "inspect",
+      "upload digest verification",
+      "install",
+      "start",
+      "status",
+      "logs",
+      "stop",
+      "uninstall",
+      "residue check"
+    ],
+    "existing_applications_modified": false,
+    "existing_reference_application_final_status": "running",
+    "residue_after_scoped_cleanup": false,
+    "artifact_sha256": "d056034b771a16ad93f0a25ce31c5355d58d4212458e9ce120d784f9ee00278b",
+    "installed_manifest_sha256": "0545f4d7b71fbfc4dba23ad7a15c95cd46d6bdaf76209eddf63e7fa387de1589",
+    "payload_checksum_manifest_sha256": "c9a3ad21c8af429b556f41476c5ba33f1334d4130cebef9995da4d2a9f834ef4",
+    "payload_regular_files_verified": 3
+  },
+  "local_verification": {
+    "macos_round_1": {
+      "tests": 63,
+      "result": "pass",
+      "real_fnpack_version": "1.2.3"
+    },
+    "macos_round_2": {
+      "tests": 63,
+      "result": "pass",
+      "real_fnpack_version": "1.2.3"
+    },
+    "linux_amd64_clean_room": {
+      "tests": 63,
+      "result": "pass",
+      "real_fnpack_version": "1.2.3",
+      "environment": "python:3.12-slim with a read-only source mount copied into a fresh container directory"
+    }
+  }
+}
