@@ -225,6 +225,12 @@ def validate_manifest(document: ManifestDocument) -> tuple[list[str], list[str]]
             errors.append(
                 "manifest desktop_uidir must be a safe relative path below app/"
             )
+    version_core = _numeric_version_core(version) if version else None
+    if version_core is not None and len(version_core) < 3:
+        warnings.append(
+            "manifest version has fewer than three numeric segments; newer fnpack "
+            f"releases reject it (require x.y.z), current: {version}"
+        )
     if values.get("arch"):
         warnings.append("manifest arch is deprecated; use platform instead")
 

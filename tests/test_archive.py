@@ -46,13 +46,36 @@ class ProjectInspectionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             project = create_project(Path(temporary))
             secret = "-----BEGIN OPENSSH PRIVATE KEY-----"
+            body = "A" * 70
             (project / "app" / "late-secret.txt").write_bytes(
-                b"x" * (70 * 1024) + secret.encode() + b"\n"
+                b"x" * (70 * 1024)
+                + secret.encode()
+                + b"\n"
+                + body.encode()
+                + b"\n"
             )
             report = inspect_project(project)
             self.assertFalse(report.ok)
             self.assertTrue(any("private-key material" in item for item in report.errors))
             self.assertFalse(any(secret in item for item in report.errors))
+
+    def test_pem_marker_without_key_body_is_not_flagged(self) -> None:
+        # Go binaries merge string constants, so lone PEM headers from x509
+        # libraries appear in the string table without any key material.
+        with tempfile.TemporaryDirectory() as temporary:
+            project = create_project(Path(temporary))
+            (project / "app" / "binary.bin").write_bytes(
+                b"someModel/Name-V2-Chat"
+                + b"-----BEGIN PRIVATE KEY-----"
+                + b"MsgType_FullClientRequest"
+                + b"-----END PRIVATE KEY-----"
+                + b"%s/api/v3/chat/completions"
+            )
+            report = inspect_project(project)
+            self.assertTrue(
+                all("private-key material" not in item for item in report.errors),
+                report.errors,
+            )
 
     def test_icon_dimensions_are_checked(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -261,6 +284,21 @@ class FpkInspectionTests(unittest.TestCase):
             report = inspect_fpk(path)
             self.assertFalse(report.ok)
             self.assertTrue(any(".DS_Store" in item for item in report.errors))
+
+
+    def test_python_bytecode_in_payload_warns(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            stale = b"stale cached bytecode\n"
+            polluted = create_fpk(
+                Path(temporary) / "bytecode.fpk",
+                inner_extra=[
+                    (file_info("bin/__pycache__/entry.cpython-312.pyc", stale), stale)
+                ],
+            )
+            report = inspect_fpk(polluted)
+            self.assertTrue(any("Python bytecode" in item for item in report.warnings))
+            clean_report = inspect_fpk(create_fpk(Path(temporary) / "clean.fpk"))
+            self.assertFalse(any("Python bytecode" in item for item in clean_report.warnings))
 
 
 if __name__ == "__main__":

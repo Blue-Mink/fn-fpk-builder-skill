@@ -403,6 +403,113 @@ def app_logs(
     return report
 
 
+def verify_web_app(
+    config: SSHConfig,
+    appname: str,
+    *,
+    port: int | None = None,
+    container: str | None = None,
+    health_path: str = "/",
+) -> Report:
+    """Collect AppCenter DB, runtime, port and HTTP evidence for a Web FPK."""
+    validate_appname(appname)
+    if port is not None and (port < 1 or port > 65535):
+        raise UsageError("--port must be between 1 and 65535")
+    if container and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", container):
+        raise UsageError(f"unsafe container name: {container!r}")
+    if not health_path.startswith("/") or "\x00" in health_path:
+        raise UsageError("--health-path must start with / and must not contain NUL")
+
+    report = Report()
+    report.details["host"] = config.host
+    report.details["appname"] = appname
+    report.details["expected_port"] = port
+    report.details["container"] = container
+    report.details["health_path"] = health_path
+
+    status = remote_run(config, ["appcenter-cli", "status", appname])
+    report.details["appcenter_status"] = {
+        "exit_code": status.returncode,
+        "stdout": status.stdout.strip(),
+        "stderr": status.stderr.strip(),
+    }
+    if _appcenter_has_error(status) or _status_value(status) != "running":
+        report.warn(f"appcenter status is not running: {_status_value(status)!r}")
+
+    sql = f"""
+psql -h /var/run/postgresql -d appcenter -U postgres -P pager=off -A -F '\t' <<'SQL'
+SELECT a.id,a.app_name,a.status,a.service_url,a.is_stop,a.is_uninstall,
+       s.service_name,s.type,s.url,s.default_url,s.full_url,s.gateway_socket,s.gateway_prefix
+FROM app a LEFT JOIN app_service s ON a.id=s.app_id
+WHERE a.app_name='{appname}';
+SQL
+"""
+    db = remote_shell(config, sql)
+    report.details["appcenter_db"] = {
+        "exit_code": db.returncode,
+        "stdout": db.stdout.strip(),
+        "stderr": db.stderr.strip(),
+    }
+    if db.returncode != 0:
+        report.warn("could not query appcenter database")
+
+    ui = remote_shell(
+        config,
+        f"cat /var/apps/{shlex.quote(appname)}/target/ui/config 2>/dev/null || "
+        f"cat /vol1/@appcenter/{shlex.quote(appname)}/ui/config 2>/dev/null || true",
+    )
+    report.details["ui_config"] = ui.stdout.strip()[:12000]
+
+    if port is not None:
+        port_probe = remote_shell(
+            config,
+            f"ss -lntp 2>/dev/null | grep -E ':{port}\\b' || true",
+        )
+        report.details["port_listener"] = port_probe.stdout.strip()
+        if not port_probe.stdout.strip():
+            report.warn(f"no TCP listener found on expected port {port}")
+
+        url = f"http://127.0.0.1:{port}{health_path}"
+        http = remote_shell(
+            config,
+            "curl -sS -D /tmp/fpk-verify-web-headers -o /tmp/fpk-verify-web-body "
+            f"--max-time 8 {shlex.quote(url)} >/tmp/fpk-verify-web-curl 2>&1; "
+            "rc=$?; printf 'curl_exit=%s\\n' \"$rc\"; "
+            "head -20 /tmp/fpk-verify-web-headers 2>/dev/null || true; "
+            "printf '\\nBODY_HEAD\\n'; head -c 500 /tmp/fpk-verify-web-body 2>/dev/null || true; "
+            "printf '\\nCURL_ERR\\n'; cat /tmp/fpk-verify-web-curl 2>/dev/null || true",
+        )
+        report.details["http_health"] = http.stdout.strip()
+        if "curl_exit=0" not in http.stdout or "HTTP/" not in http.stdout:
+            report.warn(f"HTTP health probe did not clearly succeed: {url}")
+
+    if container:
+        docker = remote_run(
+            config,
+            [
+                "sh",
+                "-c",
+                "docker ps -a --filter name=" + shlex.quote(container) +
+                " --format '{{.Names}}\t{{.Status}}\t{{.Ports}}\t{{.Label " + '"com.docker.compose.project"' + "}}' 2>/dev/null || true",
+            ],
+        )
+        report.details["docker"] = docker.stdout.strip()
+        if container not in docker.stdout:
+            report.warn(f"container {container!r} not found in docker ps -a output")
+
+    if port is not None:
+        literal_host_url = f"http://${{host}}:{port}/"
+        db_text = db.stdout
+        ui_text = ui.stdout
+        if literal_host_url not in db_text:
+            report.warn(f"appcenter DB does not mention expected URL {literal_host_url}")
+        if str(port) not in ui_text:
+            report.warn(f"ui/config does not mention expected port {port}")
+
+    return report
+
+
+
 def _expand_artifacts(values: list[str | Path]) -> list[Path]:
     artifacts: list[Path] = []
     for value in values:

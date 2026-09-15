@@ -139,5 +139,18 @@ desktop_uidir=../../outside
         self.assertTrue(any("desktop_uidir" in item for item in errors))
 
 
+    def test_two_segment_version_warns_for_newer_fnpack(self) -> None:
+        base = "appname=demo-app\ndisplay_name=Demo\ndesc=d\nmaintainer=Tests\nsource=thirdparty\nplatform=all\n"
+        two = parse_manifest_text(base.replace("platform=all", "version=1.0\nplatform=all"))
+        errors, warnings = validate_manifest(two)
+        self.assertEqual([], errors)
+        self.assertTrue(any("three numeric segments" in item for item in warnings))
+
+        three = parse_manifest_text(base.replace("platform=all", "version=1.0.1\nplatform=all"))
+        errors, warnings = validate_manifest(three)
+        self.assertEqual([], errors)
+        self.assertFalse(any("three numeric segments" in item for item in warnings))
+
+
 if __name__ == "__main__":
     unittest.main()

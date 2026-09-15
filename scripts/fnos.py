@@ -19,6 +19,7 @@ from fpk_lib.remote import (  # noqa: E402
     deploy,
     remote_doctor,
     uninstall,
+    verify_web_app,
 )
 from fpk_lib.report import OperationError, Report, UsageError  # noqa: E402
 from fpk_lib.smoke import smoke_test  # noqa: E402
@@ -79,6 +80,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     for action in ("status", "start", "stop"):
         _add_app_action(commands, action, f"{action} an installed fnOS application")
+
+    verify = commands.add_parser("verify-web-app", help="collect AppCenter/DB/runtime/HTTP evidence for a Web app")
+    _add_json(verify)
+    _add_remote(verify)
+    verify.add_argument("appname")
+    verify.add_argument("--web-port", type=int, help="expected HTTP service port")
+    verify.add_argument("--container", help="expected Docker container name")
+    verify.add_argument("--health-path", default="/", help="HTTP path to probe, default /")
 
     logs = commands.add_parser("logs", help="discover or tail app-owned logs")
     _add_json(logs)
@@ -143,6 +152,14 @@ def execute(args: argparse.Namespace) -> Report:
         )
     if args.command in {"status", "start", "stop"}:
         return app_action(config, args.command, args.appname)
+    if args.command == "verify-web-app":
+        return verify_web_app(
+            config,
+            args.appname,
+            port=args.web_port,
+            container=args.container,
+            health_path=args.health_path,
+        )
     if args.command == "logs":
         return app_logs(
             config,

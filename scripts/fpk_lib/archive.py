@@ -52,7 +52,7 @@ SECRET_PATTERNS = (
     (
         "private-key material",
         re.compile(
-            rb"-----BEGIN (?:RSA |OPENSSH |EC |DSA )?PRIVATE KEY-----"
+            rb"-----BEGIN (?:RSA |OPENSSH |EC |DSA )?PRIVATE KEY-----[\r\n ]*[A-Za-z0-9+/=]{64,}"
         ),
     ),
     ("AWS access key", re.compile(rb"(?<![A-Z0-9])AKIA[A-Z0-9]{16}(?![A-Z0-9])")),
@@ -387,6 +387,30 @@ def _image_dimensions(data: bytes) -> tuple[str, int, int] | None:
     return None
 
 
+def _png_corner_alpha(data: bytes) -> tuple[int, int, int, int] | None:
+    if not data.startswith(PNG_SIGNATURE):
+        return None
+    try:
+        from PIL import Image  # type: ignore
+    except ImportError:
+        return None
+    try:
+        image = Image.open(io.BytesIO(data)).convert("RGBA")
+    except Exception:
+        return None
+    width, height = image.size
+    if width < 1 or height < 1:
+        return None
+    pixels = image.load()
+    return (
+        int(pixels[0, 0][3]),
+        int(pixels[width - 1, 0][3]),
+        int(pixels[0, height - 1][3]),
+        int(pixels[width - 1, height - 1][3]),
+    )
+
+
+
 def _validate_icon(name: str, data: bytes, report: Report) -> None:
     if len(data) > MAX_ICON_SIZE:
         report.error(f"{name} exceeds the {MAX_ICON_SIZE}-byte icon limit")
@@ -400,6 +424,15 @@ def _validate_icon(name: str, data: bytes, report: Report) -> None:
         report.error(
             f"{name} must be {expected}x{expected}, got {width}x{height} {image_format}"
         )
+    corner_alpha = _png_corner_alpha(data)
+    if corner_alpha is not None:
+        report.details.setdefault("icon_corner_alpha", {})[name] = corner_alpha
+        if any(alpha != 0 for alpha in corner_alpha):
+            report.warn(
+                f"{name} PNG corners are opaque/non-transparent {corner_alpha}; "
+                "fnOS desktop icons may look square. For dark full-bleed icons, "
+                "use scripts/icon_fit.py --style fnos-rounded-dark."
+            )
 
 
 def _validate_project_paths(project: Path, report: Report) -> None:
@@ -493,6 +526,40 @@ def _walk_project(project: Path, report: Report) -> list[dict[str, object]]:
     return binaries
 
 
+def _validate_app_payload_pollution(project: Path, report: Report) -> None:
+    suspicious = (
+        "app/manifest",
+        "app/cmd",
+        "app/config",
+        "app/wizard",
+        "app/app",
+    )
+    for relative in suspicious:
+        path = project / relative
+        if path.exists():
+            report.error(
+                f"{relative}: app/ payload appears to contain an outer FPK skeleton; "
+                "remove nested manifest/cmd/config/wizard/icon copies before packaging"
+            )
+    app_dir = project / "app"
+    if app_dir.is_dir():
+        for item in sorted(app_dir.rglob("*.fpk")):
+            if item.is_file():
+                report.error(
+                    f"{item.relative_to(project).as_posix()}: old FPK artifact must not be packaged inside app.tgz"
+                )
+
+
+def _validate_inner_payload_pollution(members: dict[str, tarfile.TarInfo], report: Report) -> None:
+    for suspicious in ("manifest", "cmd", "wizard", "app"):
+        if suspicious in members:
+            report.error(f"app.tgz contains nested outer FPK skeleton member: {suspicious}")
+    for member_name in members:
+        if member_name.lower().endswith(".fpk"):
+            report.error(f"app.tgz contains old FPK artifact: {member_name}")
+
+
+
 def inspect_project(
     project_path: str | Path,
     *,
@@ -507,6 +574,7 @@ def inspect_project(
         return report
 
     _validate_project_paths(project, report)
+    _validate_app_payload_pollution(project, report)
     manifest_path = project / "manifest"
     if not manifest_path.is_file():
         return report
@@ -567,6 +635,7 @@ def _audit_tar_members(
 ) -> tuple[dict[str, tarfile.TarInfo], list[dict[str, object]]]:
     members: dict[str, tarfile.TarInfo] = {}
     binaries: list[dict[str, object]] = []
+    bytecode: list[str] = []
     declared_size = 0
     for index, member in enumerate(archive):
         if index >= MAX_ARCHIVE_MEMBERS:
@@ -595,6 +664,10 @@ def _audit_tar_members(
         if name in members:
             report.error(f"archive contains duplicate member: {name}")
         members[name] = member
+        if any(part == "__pycache__" for part in PurePosixPath(name).parts) or name.endswith(
+            (".pyc", ".pyo")
+        ):
+            bytecode.append(name)
         sensitive = _sensitive_issue(name)
         if sensitive:
             report.error(f"{name}: {sensitive}")
@@ -673,6 +746,15 @@ def _audit_tar_members(
             report.error(f"{name}: archive hardlink target does not exist: {target}")
         elif not target_member.isfile():
             report.error(f"{name}: archive hardlink target is not a regular file: {target}")
+    if bytecode:
+        where = "app.tgz" if inner else "FPK"
+        shown = ", ".join(sorted(bytecode)[:3])
+        more = f" (+{len(bytecode) - 3} more)" if len(bytecode) > 3 else ""
+        report.warn(
+            f"{where} carries Python bytecode: {shown}{more}; "
+            "strip __pycache__/ and *.pyc before packaging "
+            "(fnpack copies app/ verbatim, and the stale cache ships to devices)"
+        )
     return members, binaries
 
 
@@ -776,6 +858,7 @@ def inspect_fpk(
                         inner=True,
                     )
                     report.details["inner_member_count"] = len(inner_members)
+                    _validate_inner_payload_pollution(inner_members, report)
                     ui_dir = document.values.get("desktop_uidir") or "ui"
                     ui_path = f"{ui_dir}/config"
                     ui_member = inner_members.get(ui_path)
