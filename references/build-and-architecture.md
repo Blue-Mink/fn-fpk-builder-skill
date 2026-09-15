@@ -137,6 +137,7 @@ source project
 - 发布前检查镜像 manifest 是否包含每个声明目标。
 - 固定镜像 digest 优于浮动 tag。
 - Compose 的项目名、容器名、端口或 gateway socket 要与状态脚本和入口配置一致。
+- 对需要 AppCenter 打开、停止、启动和改端口的 Docker Web 应用，优先阅读 [Docker 应用 FPK 构建、问题处理与验证流程](docker-app-flow.md)。实测结论：当内置 `docker-project` stop/start 路径不可靠时，应移除 `docker-project` resource，保留 `ctl_stop=true`，统一由 `cmd/main` lifecycle 管理 Docker Compose。
 
 ### 静态/CGI
 

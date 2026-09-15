@@ -162,6 +162,52 @@ fpk-skill-smoke-{timestamp-or-random}
 
 ## 参考实现
 
-远程流程已在独立 fnOS 项目中验证。可复用的经验是上传、卸载后重装、等待状态、收集日志和验证文件哈希。
+远程流程已在独立 fnOS 项目中验证。可复用的经验是上传、卸载后重装、等待状态、收集日志和验证文件哈希。Docker Web FPK 还必须额外验证 AppCenter stop/start 是否真正传递到 Docker、端口配置是否传递到 compose/DB/UI；完整流程见 [Docker 应用 FPK 构建、问题处理与验证流程](docker-app-flow.md)。
 
 参考实现包含项目专属地址、端口、物理路径和卸载策略，这些信息不属于通用规范，因此不在本 Skill 中记录。通用流程必须使用本文定义的更安全默认值。
+
+## Docker Web 应用专项调试记录（fnOS 1.2.19-0）
+
+### 背景
+该 FPK 在构建和容器运行上均通过，但 AppCenter 应用设置页报错"无法连接到服务器"。经过多轮排查最终定位为数据库状态字段问题。
+
+### 问题现象
+- 容器 `sample-web`：`docker ps` 显示 `Up 42 minutes (healthy)`，端口映射正常
+- API：`curl http://127.0.0.1:{port}/api/health` → `{"status":"ok"}`
+- 登录：`POST /api/auth/login` → 返回 JWT token（有效期 8h）
+- AppCenter 应用设置页：`HTTP/1.1 502 Bad Gateway`，前端提示"无法连接到服务器"
+- 点击"打开"按钮：HTTP 200 但返回 `404 page not found`（前置反代的 redirect 目标错误）
+- `appcenter-cli status` 显示：`running`（但初始为 `start`）
+- `app_service` 表 `service_url` 字段：**为空**（应为 `http://${host}:{port}/`）
+
+### 根因定位
+通过逐步排查定位到两个关键问题：
+
+1. **`service_url` 为空**：初始手工 INSERT 时 `service_url` 字段漏填（原值为空字符串），AppCenter 后端无法获取实际访问地址。
+2. **状态字段 `status = 'start'`**：数据库记录为 `start` 而非 `running`，导致 AppCenter 按钮显示"卸载"而非"打开"；且某些后端逻辑依赖 `status=running` 才判定服务可用。
+
+### 修复操作
+```sql
+-- 修复 service_url
+UPDATE app_service SET service_url='http://${host}:{port}/' WHERE id={app_service_row_id};
+
+-- 修复状态字段（start → running）
+UPDATE app SET status='running' WHERE id={app_row_id};
+```
+重启 `trim_app_center.service` 后，按钮切换为"打开"，应用设置页不再报错。
+
+### 已知问题
+- **不要只依赖 `/vol1/@appcenter/{appname}` 判断 payload 是否落地**：实机最终验证中，安装后的稳定入口是 `/var/apps/{appname}`，payload 位于 `/var/apps/{appname}/target`。生命周期脚本必须做路径归一化，而不是写死 `/vol1/@appcenter/{appname}`。
+- **`docker-project` resource 在该实机组合下会干扰停止链路**：AppCenter 内置 docker-project stop 曾报 `open /docker/docker-compose.yaml: no such file or directory`，表现为 AppCenter `stopped` 但 Docker 仍 `Up healthy`。最终方案移除 `docker-project`，保留 `ctl_stop=true`，由 `cmd/main` lifecycle 管理 Docker Compose。
+- **图标兼容**：官方 logo 为白色背景 PNG，直接替换会覆盖原有圆角效果。处理顺序：先裁剪白边+透明化（ImageMagick `DstAtop`），再叠加 fnOS 圆角 mask（`DstOut` + circle fill）。
+- **图标尺寸**：fnOS 要求同时提供 `icon_64.png`（256x256 内容缩到 64x64）和 `icon_256.png`（原始 256x256）。
+
+### 调试 checklist（今后同类问题可复用）
+1. 容器 `healthy` 且 API 200 → 排除容器/网络层故障
+2. `curl localhost:port/api/health` → 确认端口映射正常
+3. 检查 `app` 表 `status` 字段：应为 `running`，非 `start`
+4. 检查 `app_service` 表 `service_url` 字段：不应为空
+5. 检查应用自带前置反代的 `/appui` location 配置是否存在
+6. 检查图标目录 `ui/images/` 是否包含 `icon_64.png` 和 `icon_256.png`
+7. 重启 `trim_app_center.service` 后验证按钮状态
+8. 查看 AppCenter 后端日志（如有权限）定位 502 来源

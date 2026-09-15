@@ -48,6 +48,15 @@
       "Does not claim that remote sources are current while network access is unavailable.",
       "Distinguishes warnings or unverifiable remote state from local validation failures.",
       "Returns the documented JSON envelope without modifying the ledger."
+    ],
+    "vm-app-lifecycle": [
+      "Explains the roughly 190-second install-callback watchdog and moves the download/provisioning work into a detached background worker with a file-based state machine, so install_callback returns immediately.",
+      "Sets checkport=false for an app whose entry port is permanently resident, and cites the port-in-use start failure as the reason.",
+      "Keeps cmd/main status returning 0 for the resident entry service and documents that deviation, instead of relying on a start callback the platform never issues.",
+      "Makes stop non-blocking and protects the forced power-off with a power-on token so a late watcher cannot kill a VM that was just started.",
+      "Reconciles AppCenter bookkeeping after the entry page powers the VM on, with a cooldown and a do-not-steer guard, after proving that extra CLI call does not restart its own service.",
+      "Treats VM disk persistence explicitly: the already-installed check covers the libvirt storage pool as well as the application directory, and reinstall must not delete user data.",
+      "Does not connect to a device or fabricate verification; names the evidence still required (platform journal events, cmd/main call trace, install state file)."
     ]
   }
 }

@@ -204,6 +204,7 @@ python3 scripts/fnos.py uninstall \
 | `fpk.py build` | 隔离组装、构建、审计、命名并生成哈希 |
 | `fpk.py inspect` | 审计项目目录或最终 `.fpk` |
 | `fpk.py sources` | 显示来源账本或检查内容漂移 |
+| `icon_fit.py` | 生成并同步 fnOS 根级/UI 图标，支持官方 squircle 曲线与 legacy r20/r80 圆角 |
 
 ### fnOS 远程生命周期
 
@@ -212,6 +213,7 @@ python3 scripts/fnos.py uninstall \
 | `fnos.py doctor` | 检查设备架构和 appcenter-cli |
 | `fnos.py deploy` | 自动选包、上传、卸载重装并收集证据 |
 | `fnos.py status` | 查询应用状态 |
+| `fnos.py verify-web-app` | 联合校验 AppCenter 状态、DB URL、UI config、容器/进程、端口和 HTTP health |
 | `fnos.py logs` | 安全发现或读取应用日志 |
 | `fnos.py start` | 启动应用并解释语义结果 |
 | `fnos.py stop` | 停止应用并解释语义结果 |
@@ -374,7 +376,7 @@ Agent 只有在下面这些信息无法从项目可靠推导时才应暂停询�
 将仓库放入 Codex Skills 目录：
 
 ```bash
-git clone https://github.com/kci-lnk/fn-fpk-builder-skill.git \
+git clone https://github.com/<your-org>/fn-fpk-builder-skill.git \
   "${CODEX_HOME:-$HOME/.codex}/skills/fn-fpk-builder-skill"
 ```
 
@@ -578,9 +580,16 @@ python3 -m unittest discover -s tests -v
 | [官方契约](references/official-contract.md) | manifest、目录、生命周期、UI、wizard、权限与资源 |
 | [构建与架构](references/build-and-architecture.md) | fnpack、staging、overlay、ELF 与语言接入 |
 | [CI 发布](references/ci-release.md) | 干净环境、多架构产物和 GitHub Actions |
+| [公开发布净化](references/public-release-hygiene.md) | GitHub/FnDepot 发布前排除测试报告、设备信息、日志和凭据 |
+| [Docker 应用全流程](references/docker-app-flow.md) | Docker Web FPK 构建、生命周期、端口配置、AppCenter 启停和验证方法 |
+| [Native 端口设置闭环](references/native-web-port-flow.md) | 向导改端口后 `config_init`/`config_callback`/`ui/config`/DB/监听五处一致 |
+| [虚拟机承载型应用](references/vm-app-flow.md) | libvirt/KVM FPK：190 秒回调看门狗与秒回模式、平台启停真机语义、磁盘与网卡身份、地址寻踪闸门、串口自救、反代链接改写 |
+| [离线回归与真机取证](references/offline-and-live-testing.md) | 打桩戒律、结构不变量用例、抽源桩测、留痕取证、录屏、文档渲染校验 |
 | [远程测试](references/remote-testing.md) | 部署、卸载重装、日志、回滚与隔离烟测 |
+| [AppCenter 状态 runbook](references/appcenter-state-db-runbook.md) | 联合校验 AppCenter 状态、DB URL、UI config、wizard 回显和真实运行态 |
+| [远端临时补丁规范](references/temporary-remote-patches.md) | 记录调试补丁、备份、验证、回滚与是否固化进源码 |
 | [安全模型](references/security.md) | 归档、密钥、权限、供应链与破坏性操作 |
-| [故障排查](references/troubleshooting.md) | 常见构建、架构、安装和运行问题 |
+| [故障排查](references/troubleshooting.md) | 常见构建、架构、安装和运行问题（含 Docker Web、Native Web、虚拟机承载型三类实机沉淀） |
 | [来源账本](references/provenance.json) | 官方文档、fnpack、参考项目与实机证据 |
 
 ## 📌 设计边界
