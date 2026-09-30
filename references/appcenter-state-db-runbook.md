@@ -32,6 +32,14 @@ cat /var/apps/{appname}/target/ui/config 2>/dev/null || cat /vol1/@appcenter/{ap
 
 不要在公开日志里保留真实 cookie、token、密码或私有域名。
 
+同样的查询连同一遍 HTTP 探活，可以用技能自带 CLI 一次采齐（`--json` 便于比对前后差异）：
+
+```bash
+python3 "$SKILL_DIR/scripts/fnos.py" verify-web-app {appname} --host root@<NAS_IP> --json
+```
+
+手工敲适合单次定位；反复回归、或要在交付报告里附证据时用 CLI，避免漏项。
+
 ## 常见不一致与修复方向
 
 ### AppCenter running，但服务没起来
@@ -54,6 +62,32 @@ cat /var/apps/{appname}/target/ui/config 2>/dev/null || cat /vol1/@appcenter/{ap
 
 - `wizard/config initValue` 只能作为默认值；真实回显应由 `cmd/config_init` 输出当前状态覆盖。
 - 修复：`config_init` 从持久配置、已安装 `ui/config` 或 DB 读取真实端口并输出 `wizard_*={value}`。
+
+## 应用停用后桌面入口还在
+
+**症状**：应用中心里已“停用”，桌面图标仍在；点开只剩反代失败页或空白，用户以为应用崩了。
+
+**根因**：桌面入口是平台在**安装/升级时**从 `ui/config` 的 `.url` 表导入 `app_service` 的
+**静态条目**（`no_display='f'` 即可见）。它与进程无关——停用只停服务，**不回收、不隐藏**入口行；
+只有卸载删行，重装再按新的 `ui/config` 重建。
+
+**可选修法（应用侧，要求生命周期脚本是 root）**：
+
+| 时机 | 动作 |
+| :--- | :--- |
+| `stop` 成功 | `UPDATE app_service SET no_display='t' WHERE service_name LIKE '<appname>.%'`，同时写隐藏标记（放 `@appdata`，跨重装保留） |
+| `start` | 置回 `'f'` 并清标记 |
+| `status` 健康且标记在位 | **自愈**补 `'f'`：平台“启用”可能只轮询 `status`、不回调 `start`（实测过两次） |
+
+护栏（缺一不可）：
+
+- **SQL 失败一律静默跳过**。`psql`/`sudo` 不存在、连不上库、权限不足都不能让生命周期脚本非零退出——
+  入口显隐是锦上添花，不值得起用启停失败去换。
+- `LIKE` 模式必须带应用前缀 `<appname>.%`（入口 ID 按约定就是 appname 前缀），**绝不做全表更新**。
+- 写库前先按 `app_id` 或入口 ID 查一次并打印命中行数，确认只覆盖自己那几行。
+- 入口自身的失败页仍要能看懂（正确状态码 + 人话说明 + 自动刷新）。隐藏入口只减少误点，不能替代错误页。
+- `run-as=package` 的应用**做不到**这件事（连不上库、也没权限）。此时应在交付说明里写明
+  “停用后桌面入口仍在”属平台行为，别在文档里承诺联动。
 
 ## 写库注意事项
 

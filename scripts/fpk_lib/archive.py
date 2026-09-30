@@ -14,7 +14,7 @@ import tarfile
 import tempfile
 import zlib
 from pathlib import Path, PurePosixPath
-from typing import BinaryIO, Iterable
+from typing import BinaryIO, Callable, Iterable
 
 from .binary import BinaryInfo, detect_binary
 from .manifest import ManifestDocument, parse_manifest, parse_manifest_text, validate_manifest
@@ -98,6 +98,26 @@ def sha256_file(path: str | Path) -> str:
     with Path(path).open("rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _member_digest(archive: tarfile.TarFile, member: tarfile.TarInfo) -> str | None:
+    """Hash one member payload, or ``None`` when it cannot be read."""
+
+    try:
+        stream = archive.extractfile(member)
+    except (tarfile.TarError, OSError):
+        return None
+    if stream is None:
+        return None
+    digest = hashlib.sha256()
+    remaining = MAX_SINGLE_MEMBER_SIZE
+    while remaining > 0:
+        chunk = stream.read(min(1024 * 1024, remaining))
+        if not chunk:
+            break
+        digest.update(chunk)
+        remaining -= len(chunk)
     return digest.hexdigest()
 
 
@@ -420,19 +440,171 @@ def _validate_icon(name: str, data: bytes, report: Report) -> None:
         return
     image_format, width, height = dimensions
     expected = 256 if name == "ICON_256.PNG" else 64
-    if (width, height) != (expected, expected):
-        report.error(
-            f"{name} must be {expected}x{expected}, got {width}x{height} {image_format}"
-        )
+    if width != height:
+        report.error(f"{name} must be square, got {width}x{height} {image_format}")
+    elif (width, height) != (expected, expected):
+        detail = f"{name} should be {expected}x{expected} per the official contract, got {width}x{height}"
+        if width < expected:
+            report.error(f"{detail}; smaller than official, AppCenter upscales and the tile looks soft")
+        else:
+            report.warn(
+                f"{detail}; AppCenter accepts a larger square (192 and 256 observed "
+                "shipping fine), but the official pair stays 64/256"
+            )
     corner_alpha = _png_corner_alpha(data)
     if corner_alpha is not None:
         report.details.setdefault("icon_corner_alpha", {})[name] = corner_alpha
         if any(alpha != 0 for alpha in corner_alpha):
             report.warn(
                 f"{name} PNG corners are opaque/non-transparent {corner_alpha}; "
-                "fnOS desktop icons may look square. For dark full-bleed icons, "
-                "use scripts/icon_fit.py --style fnos-rounded-dark."
+                "fnOS desktop icons may look square. Re-cut them with "
+                "scripts/icon_fit.py (default --style fnos-squircle, the official "
+                "continuous-curvature corner)."
             )
+
+
+ICON_PLACEHOLDER = re.compile(r"\{[^{}]*\}")
+
+
+def _parse_url_table(raw: bytes) -> dict[str, object] | None:
+    """Return the ``.url`` desktop-entry table, or ``None`` when absent.
+
+    Malformed JSON is reported by the JSON validator, so this stays silent here.
+    """
+
+    try:
+        document = json.loads(raw.decode("utf-8-sig"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    entries = document.get(".url") if isinstance(document, dict) else None
+    return entries if isinstance(entries, dict) else None
+
+
+def _entry_icon_fields(raw: bytes, origin: str, report: Report) -> list[tuple[str, str]]:
+    """Collect ``(entry id, icon path)`` pairs from a ``ui/config`` ``.url`` table."""
+
+    entries = _parse_url_table(raw)
+    if entries is None:
+        return []
+    found: list[tuple[str, str]] = []
+    for entry_id, entry in entries.items():
+        if not isinstance(entry, dict):
+            continue
+        icon = entry.get("icon")
+        if not isinstance(icon, str) or not icon.strip():
+            continue
+        value = icon.strip().lstrip("/")
+        if ".." in PurePosixPath(value).parts:
+            report.error(f"{origin}: entry {entry_id!r} icon path escapes the ui directory")
+            continue
+        found.append((str(entry_id), value))
+    return found
+
+
+def _validate_desktop_applaunchname(
+    raw: bytes, launchname: str | None, origin: str, report: Report
+) -> None:
+    """Require ``desktop_applaunchname`` to name one of the ``.url`` entries.
+
+    fnpack refuses to build otherwise, so surfacing it here keeps the failure at
+    ``inspect`` time instead of half-way through a release build.
+    """
+
+    if not launchname:
+        return
+    entries = _parse_url_table(raw)
+    if entries is None:
+        return
+    if launchname not in entries:
+        report.error(
+            f"{origin}: manifest desktop_applaunchname {launchname!r} has no matching "
+            f".url entry (available: {', '.join(sorted(entries)) or 'none'}); fnpack "
+            "will reject this package"
+        )
+
+
+def _validate_entry_ports(
+    raw: bytes, manifest_values: dict[str, str], origin: str, report: Report
+) -> None:
+    """Cross-check desktop-entry ports against ``service_port`` and ``checkport``."""
+
+    entries = _parse_url_table(raw)
+    if not entries:
+        return
+    ports: list[str] = []
+    for entry in entries.values():
+        if not isinstance(entry, dict):
+            continue
+        port = entry.get("port")
+        if port in (None, "", 0):
+            continue
+        ports.append(str(port))
+    if not ports:
+        return
+    service_port = str(manifest_values.get("service_port") or "").strip()
+    if service_port and service_port not in ports:
+        report.warn(
+            f"{origin}: no .url entry uses manifest service_port {service_port} "
+            f"(entries declare {', '.join(sorted(set(ports)))}); the AppCenter Open "
+            "button would target a port nothing listens on"
+        )
+    if str(manifest_values.get("checkport") or "").strip().lower() == "true":
+        report.warn(
+            f"{origin}: manifest checkport=true while the app ships desktop entries on "
+            f"port(s) {', '.join(sorted(set(ports)))}; a permanently resident entry port "
+            "makes the platform's pre-start port check fail (error 11000 / "
+            "APP_START_FAILED_PORT_USAGE) - entry-resident apps need checkport=false"
+        )
+
+
+def _validate_entry_icons(
+    icons: list[tuple[str, str]],
+    exists: Callable[[str], bool],
+    origin: str,
+    report: Report,
+) -> None:
+    """Require every desktop-entry icon path to resolve to a shipped file.
+
+    The platform requests ``<prefix>_{0}.png`` for *every* rendered size and
+    resolves ``{0}`` to the fallback slot ``<prefix>_0.png``, so the desktop
+    tile and the application-list row read the same file and ``_64``/``_128``
+    are never fetched. A ``{0}`` template without that fallback ships an icon
+    that silently never appears (observed on upstream packages), while the
+    official contract still asks for the 64 and 256 variants to exist.
+    """
+
+    if not icons:
+        return
+    resolved: dict[str, object] = {}
+    for entry_id, icon in icons:
+        if "{" not in icon:
+            present = exists(icon)
+            resolved[entry_id] = {"icon": icon, "present": present}
+            if not present:
+                report.error(f"{origin}: entry {entry_id!r} icon does not exist: {icon}")
+            continue
+        fallback = ICON_PLACEHOLDER.sub("0", icon)
+        variants = {size: ICON_PLACEHOLDER.sub(str(size), icon) for size in (64, 256)}
+        present = exists(fallback)
+        resolved[entry_id] = {
+            "icon": icon,
+            "requested_slot": fallback,
+            "present": present,
+            "official_variants": {size: exists(name) for size, name in variants.items()},
+        }
+        if not present:
+            report.error(
+                f"{origin}: entry {entry_id!r} icon {icon!r} resolves to {fallback!r}, "
+                "which is not shipped; the platform fetches this fallback slot for "
+                "both desktop tiles and application-list rows"
+            )
+        for size, name in variants.items():
+            if not exists(name):
+                report.warn(
+                    f"{origin}: entry {entry_id!r} is missing the official {size} "
+                    f"variant {name!r}"
+                )
+    report.details.setdefault("entry_icons", {}).update(resolved)
 
 
 def _validate_project_paths(project: Path, report: Report) -> None:
@@ -463,6 +635,7 @@ def _validate_project_paths(project: Path, report: Report) -> None:
 
 def _walk_project(project: Path, report: Report) -> list[dict[str, object]]:
     binaries: list[dict[str, object]] = []
+    non_executable_cmd: list[str] = []
     for root, directories, files in os.walk(project, followlinks=False):
         root_path = Path(root)
         ignored_directories = [
@@ -515,7 +688,7 @@ def _walk_project(project: Path, report: Report) -> list[dict[str, object]]:
                 except OSError as exc:
                     report.error(f"cannot read {relative}: {exc}")
             if relative.startswith("cmd/") and path.stat().st_mode & 0o111 == 0:
-                report.error(f"{relative} is not executable")
+                non_executable_cmd.append(relative)
             _record_binary(
                 report,
                 relative,
@@ -523,6 +696,12 @@ def _walk_project(project: Path, report: Report) -> list[dict[str, object]]:
                 binaries,
                 executable=bool(mode & 0o111),
             )
+    if non_executable_cmd:
+        report.warn(
+            "cmd/* scripts are not executable in the project tree: "
+            f"{', '.join(sorted(non_executable_cmd))}; fnOS installs cmd/* with its "
+            "own mode, but set the bit so local scripts behave the same way"
+        )
     return binaries
 
 
@@ -591,14 +770,24 @@ def inspect_project(
         report.error(f"manifest desktop_uidir does not exist under app/: {ui_dir}")
     ui_config = project / "app" / ui_dir / "config"
     if ui_config.is_file():
+        origin = f"app/{ui_dir}/config"
         try:
-            _validate_json_by_path(
-                f"app/{ui_dir}/config",
-                ui_config.read_bytes(),
+            config_bytes = ui_config.read_bytes()
+        except OSError as exc:
+            report.error(f"cannot read {origin}: {exc}")
+        else:
+            _validate_json_by_path(origin, config_bytes, report)
+            _validate_desktop_applaunchname(
+                config_bytes, document.values.get("desktop_applaunchname"), origin, report
+            )
+            _validate_entry_ports(config_bytes, document.values, origin, report)
+            ui_base = project / "app" / ui_dir
+            _validate_entry_icons(
+                _entry_icon_fields(config_bytes, origin, report),
+                lambda relative: (ui_base / relative).is_file(),
+                origin,
                 report,
             )
-        except OSError as exc:
-            report.error(f"cannot read app/{ui_dir}/config: {exc}")
 
     binaries = _walk_project(project, report)
     _validate_architecture(report, document, binaries, expected_arch)
@@ -634,8 +823,10 @@ def _audit_tar_members(
     inner: bool,
 ) -> tuple[dict[str, tarfile.TarInfo], list[dict[str, object]]]:
     members: dict[str, tarfile.TarInfo] = {}
+    duplicates: list[tuple[str, tarfile.TarInfo, tarfile.TarInfo]] = []
     binaries: list[dict[str, object]] = []
     bytecode: list[str] = []
+    non_executable_cmd: list[str] = []
     declared_size = 0
     for index, member in enumerate(archive):
         if index >= MAX_ARCHIVE_MEMBERS:
@@ -662,7 +853,7 @@ def _audit_tar_members(
             continue
         name = _clean_archive_name(original)
         if name in members:
-            report.error(f"archive contains duplicate member: {name}")
+            duplicates.append((name, members[name], member))
         members[name] = member
         if any(part == "__pycache__" for part in PurePosixPath(name).parts) or name.endswith(
             (".pyc", ".pyo")
@@ -736,7 +927,33 @@ def _audit_tar_members(
                 executable=bool(member.mode & 0o111),
             )
         if not inner and name.startswith("cmd/") and member.mode & 0o111 == 0:
-            report.error(f"{name} is not executable")
+            non_executable_cmd.append(name)
+    if non_executable_cmd:
+        report.warn(
+            "cmd/* scripts are not executable in the archive: "
+            f"{', '.join(sorted(non_executable_cmd))}; fnOS installs cmd/* with its "
+            "own mode (a 644 cmd/main was installed 755 and ran fine), but set the "
+            "bit so local scripts and smoke tests behave the same way"
+        )
+    for name, first, second in duplicates:
+        identical = (
+            first.type == second.type
+            and first.mode == second.mode
+            and first.size == second.size
+        )
+        if identical and first.isfile():
+            digest_first = _member_digest(archive, first)
+            identical = digest_first is not None and digest_first == _member_digest(archive, second)
+        if identical:
+            report.warn(
+                f"archive contains duplicate member: {name} (byte-identical copies; "
+                "fnpack emits these for config/* and the last entry wins on extraction)"
+            )
+        else:
+            report.error(
+                f"archive contains duplicate member with differing content: {name}; "
+                "the extracted file would depend on member order"
+            )
     for name, member in members.items():
         if not member.islnk() or _hardlink_issue(member.linkname):
             continue
@@ -862,15 +1079,36 @@ def inspect_fpk(
                     ui_dir = document.values.get("desktop_uidir") or "ui"
                     ui_path = f"{ui_dir}/config"
                     ui_member = inner_members.get(ui_path)
-                    if ui_member and ui_member.isfile() and ui_path not in JSON_INNER_PATHS:
+                    if ui_member and ui_member.isfile():
                         ui_stream = inner_tar.extractfile(ui_member)
                         if ui_stream is not None:
                             ui_data = _read_limited(ui_stream, f"app/{ui_path}", report)
                             if ui_data is not None:
-                                _validate_json_by_path(
+                                if ui_path not in JSON_INNER_PATHS:
+                                    _validate_json_by_path(
+                                        f"app/{ui_path}",
+                                        ui_data,
+                                        report,
+                                    )
+
+                                def _inner_has(relative: str, _members=inner_members, _ui=ui_dir) -> bool:
+                                    member = _members.get(f"{_ui}/{relative}")
+                                    return member is not None and member.isfile()
+
+                                _validate_entry_icons(
+                                    _entry_icon_fields(ui_data, f"app/{ui_path}", report),
+                                    _inner_has,
                                     f"app/{ui_path}",
-                                    ui_data,
                                     report,
+                                )
+                                _validate_desktop_applaunchname(
+                                    ui_data,
+                                    document.values.get("desktop_applaunchname"),
+                                    f"app/{ui_path}",
+                                    report,
+                                )
+                                _validate_entry_ports(
+                                    ui_data, document.values, f"app/{ui_path}", report
                                 )
             except tarfile.TarError as exc:
                 report.error(f"app.tgz is not a valid tar archive: {exc}")

@@ -86,6 +86,28 @@ fnpack 1.2.3 实测会把 staging 中的 `.DS_Store` 原样带入 FPK，因此 s
 
 资源声明应遵循最小权限。`usr-local-linker` 的命令名使用应用前缀，避免覆盖通用系统命令。
 
+### 需要监听特权端口（<1024）时
+
+有些协议端口天生在 1024 以下（KMS 1688、部分代理的 80/443）。几条路里只有一条实测可用：
+
+| 做法 | 实测结论 |
+| :--- | :--- |
+| 打包时给二进制带 file capability | **不可行**。`fnpack` 打包**丢弃扩展属性**（`app.tgz` 内 `SCHILY.xattr.security.capability` 出现 0 次），且 `setcap` 会把模式位掩成 `000` 并被原样打包，解出后**不可执行**。 |
+| 安装脚本里补 `setcap` | **不生效**。安装期回调**不是 root**，事后 `getcap` 为空，`PATH` 里也未必有 `setcap`。 |
+| `run-as=package` + NAT 重定向（低位端口 → 高位端口） | **恒失败**。包用户改不了 netfilter：`Could not fetch rule set generation id: Permission denied (you must be root)`。脚本若把这一步当成功，面板显示“运行中”而客户端连默认端口 `Connection refused`。反过来，root 在别处加的规则，**包用户的 stop/uninstall 也删不掉**，停用后长期残留。 |
+| `run-as=root`，绑定后立即降权 | **可行（定版）**。`privilege` 声明 root，守护进程 `bind()` 之后立刻切专用用户（如 `<daemon> -u <package-user>`）：特权只用于 bind 这一步。 |
+
+采用 root 方案时，交付报告必须附**降权证据**，不能只写声明：
+
+```bash
+ps -o user= -p "$(cat <pidfile>)"       # 期望：包用户，不是 root
+ss -lntp | grep ":<port> "              # LISTEN 属主应是同一 PID
+iptables -t nat -S | grep -c '<port>'   # 期望 0：没有借道 NAT
+```
+
+能在产品侧改端口的话**优先改端口**，并把端口写进客户端命令（多数 KMS/代理类客户端支持
+`host:port` 形式），比拿特权简单得多。
+
 ## 入口与业务鉴权
 
 端口入口：

@@ -141,6 +141,8 @@ script -qec "virsh -c qemu:///system console <domain>" /dev/null
 
 ## 装机与重装操作序列
 
+通用四步流程（含备份职责、装后五维验证、回滚与错误码）见 [install-runbook.md](install-runbook.md)；本页只列虚拟机承载型的额外要求。
+
 ```bash
 appcenter-cli status <appname>
 appcenter-cli stop <appname>

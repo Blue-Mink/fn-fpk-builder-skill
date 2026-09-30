@@ -124,7 +124,9 @@ tail -n 200 /var/log/trim_app_center/error.log
 
 ### 桌面图标不存在
 
-检查 manifest 的 `desktop_uidir`、`desktop_applaunchname`，入口 ID，以及 `icon_{0}.png` 对应的 64/256 文件。UI config 必须是合法 JSON。
+先跑 `python3 scripts/fpk.py inspect <项目目录或 .fpk>`：`ui/config` 里每个入口的 `icon` 是否解析得到实际文件、`desktop_applaunchname` 是否有同名 `.url` 条目，都已由它自动核对（项目树与最终包两条路径都查）。
+
+手工排查顺序：manifest 的 `desktop_uidir`、`desktop_applaunchname`、入口 ID、UI config 是否合法 JSON，以及 `icon` 字段真正指向的文件。注意 `images/icon_{0}.png` 这种模板里，平台**只按 `{0}` 兜底槽取图**（即 `icon_0.png`，桌面与列表同源）；只放 `icon_64/256` 而漏掉 `icon_0.png` 是上游包常见的坑——图标永远不显示，但 fnpack 打包不会报错。
 
 ### CGI 返回 404
 
@@ -456,6 +458,19 @@ du -sh /var/apps/{app}/var
 
 **B6 · `appcenter-cli start` 报 `error 10500`**
 平台在 install 后已自动 `APP_STARTED`，应用已在运行。属预期，不要重试。
+
+**B7 · 服务报权限错误起不来，或面板显示“运行中”客户端却连不上**
+
+默认端口 <1024 而进程是包用户；想用 NAT 重定向补时 `iptables` 在包用户下恒失败
+（`Could not fetch rule set generation id: Permission denied (you must be root)`），脚本却把它当成功。
+**修法**：见 `security.md` 的「需要监听特权端口（<1024）时」——`run-as=root` 绑定后立刻降权，交付附降权证据。
+**别指望打包带 capability**：fnpack 会丢弃扩展属性。
+
+**B8 · 停用/卸载后 NAT 规则还在**
+
+改 netfilter 需要 root，而 `run-as=package` 应用的 `cmd/main` 全程包用户 → 加不进去也删不掉。
+**修法**：这种规则一开始就不该由包用户的应用管——要么改端口，要么整个应用 `run-as=root` 并在
+`start`/`stop` 成对管理、卸载兜底，同时在 UI 如实提示。
 
 ### C. 磁盘与网卡
 

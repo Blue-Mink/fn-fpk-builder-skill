@@ -132,6 +132,7 @@ def create_fpk(
     binaries: list[tuple[str, bytes]] | None = None,
     lifecycle_main: bytes | None = None,
     checksum_override: str | None = None,
+    cmd_mode: int = 0o755,
     inner_extra: list[tuple[tarfile.TarInfo, bytes | None]] | None = None,
     outer_extra: list[tuple[tarfile.TarInfo, bytes | None]] | None = None,
 ) -> Path:
@@ -167,7 +168,7 @@ def create_fpk(
         (file_info("app.tgz", app_tgz), app_tgz),
         (file_info("config/privilege", privilege), privilege),
         (file_info("config/resource", resource), resource),
-        (file_info("cmd/main", main, 0o755), main),
+        (file_info("cmd/main", main, cmd_mode), main),
         (file_info("wizard/install", wizard), wizard),
         (file_info("ICON.PNG", PNG_64), PNG_64),
         (file_info("ICON_256.PNG", PNG_256), PNG_256),
@@ -182,7 +183,7 @@ def create_fpk(
         "config_init",
         "config_callback",
     ):
-        entries.append((file_info(f"cmd/{name}", main, 0o755), main))
+        entries.append((file_info(f"cmd/{name}", main, cmd_mode), main))
     entries.extend(outer_extra or [])
     path.write_bytes(_tar_bytes(entries))
     return path

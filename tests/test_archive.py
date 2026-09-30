@@ -83,7 +83,28 @@ class ProjectInspectionTests(unittest.TestCase):
             (project / "ICON.PNG").write_bytes(make_png(1, 1))
             report = inspect_project(project)
             self.assertFalse(report.ok)
-            self.assertTrue(any("must be 64x64" in item for item in report.errors))
+            self.assertTrue(any("should be 64x64" in item for item in report.errors))
+
+    def test_oversized_root_icon_is_a_warning_not_a_failure(self) -> None:
+        """Real packages ship 192/256 here and render fine on a device."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            project = create_project(Path(temporary))
+            (project / "ICON.PNG").write_bytes(make_png(192, 192))
+            report = inspect_project(project)
+            self.assertTrue(report.ok, report.errors)
+            self.assertTrue(
+                any("should be 64x64" in item for item in report.warnings),
+                report.warnings,
+            )
+
+    def test_non_square_root_icon_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = create_project(Path(temporary))
+            (project / "ICON_256.PNG").write_bytes(make_png(300, 256))
+            report = inspect_project(project)
+            self.assertFalse(report.ok)
+            self.assertTrue(any("must be square" in item for item in report.errors))
 
     def test_truncated_png_with_plausible_dimensions_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -299,6 +320,112 @@ class FpkInspectionTests(unittest.TestCase):
             self.assertTrue(any("Python bytecode" in item for item in report.warnings))
             clean_report = inspect_fpk(create_fpk(Path(temporary) / "clean.fpk"))
             self.assertFalse(any("Python bytecode" in item for item in clean_report.warnings))
+
+
+
+class DuplicateMemberTests(unittest.TestCase):
+    """fnpack emits byte-identical duplicates; differing ones are a real defect."""
+
+    def test_identical_duplicates_warn_without_failing(self) -> None:
+        payload = b"[]\n"  # wizard files must be JSON arrays; only the duplicate matters here
+        with tempfile.TemporaryDirectory() as temporary:
+            fpk = create_fpk(
+                Path(temporary) / "dup.fpk",
+                outer_extra=[
+                    (file_info("wizard/config", payload), payload),
+                    (file_info("wizard/config", payload), payload),
+                ],
+            )
+            report = inspect_fpk(fpk)
+            self.assertTrue(report.ok, report.errors)
+            self.assertTrue(
+                any("duplicate member: wizard/config" in item for item in report.warnings),
+                report.warnings,
+            )
+
+    def test_differing_duplicates_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            first = b"[]\n"
+            second = b"[{}]\n"
+            fpk = create_fpk(
+                Path(temporary) / "dup.fpk",
+                outer_extra=[
+                    (file_info("wizard/config", first), first),
+                    (file_info("wizard/config", second), second),
+                ],
+            )
+            report = inspect_fpk(fpk)
+            self.assertFalse(report.ok)
+            self.assertTrue(
+                any(
+                    "duplicate member with differing content" in item
+                    for item in report.errors
+                ),
+                report.errors,
+            )
+
+    def test_non_executable_cmd_scripts_warn_without_failing(self) -> None:
+        """The platform installs cmd/* with its own mode; observed 644 -> 755."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            project = create_project(Path(temporary))
+            script = project / "cmd" / "main"
+            mode = script.stat().st_mode
+            script.chmod(mode & ~0o111)
+            try:
+                report = inspect_project(project)
+            finally:
+                script.chmod(mode)
+            self.assertTrue(report.ok, report.errors)
+            merged = [
+                item
+                for item in report.warnings
+                if "cmd/* scripts are not executable" in item
+            ]
+            self.assertEqual(len(merged), 1, report.warnings)
+            self.assertIn("cmd/main", merged[0])
+
+    def test_project_cmd_exec_bit_warnings_collapse_into_one_line(self) -> None:
+        """Ten scripts without the bit must produce one summary warning, not ten."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            project = create_project(Path(temporary))
+            saved = {}
+            for name in ("main", "install_init", "config_callback"):
+                script = project / "cmd" / name
+                saved[name] = script.stat().st_mode
+                script.chmod(0o644)
+            try:
+                report = inspect_project(project)
+            finally:
+                for name, mode in saved.items():
+                    (project / "cmd" / name).chmod(mode)
+            self.assertTrue(report.ok, report.errors)
+            merged = [
+                item
+                for item in report.warnings
+                if "cmd/* scripts are not executable" in item
+            ]
+            self.assertEqual(len(merged), 1, report.warnings)
+            for name in ("cmd/main", "cmd/install_init", "cmd/config_callback"):
+                self.assertIn(name, merged[0])
+            self.assertNotIn("cmd/upgrade_init", merged[0])
+
+    def test_archive_cmd_exec_bit_warnings_collapse_into_one_line(self) -> None:
+        """The fpk-side check collapses per-file exec-bit warnings the same way."""
+
+        with tempfile.TemporaryDirectory() as temporary:
+            fpk = create_fpk(Path(temporary) / "fixture.fpk", cmd_mode=0o644)
+            report = inspect_fpk(fpk)
+            self.assertTrue(report.ok, report.errors)
+            merged = [
+                item
+                for item in report.warnings
+                if "cmd/* scripts are not executable in the archive" in item
+            ]
+            self.assertEqual(len(merged), 1, report.warnings)
+            for name in ("cmd/main", "cmd/install_init", "cmd/config_callback"):
+                self.assertIn(name, merged[0])
 
 
 if __name__ == "__main__":

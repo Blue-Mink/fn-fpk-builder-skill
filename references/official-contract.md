@@ -227,6 +227,12 @@ psql -h /var/run/postgresql -d appcenter -U postgres -tAc \
   "SELECT s.service_name, s.title, s.url FROM app_service s, app a WHERE a.id=s.app_id AND a.app_name='<appname>'"
 ```
 
+`fpk.py inspect` 还会静态核对入口与 manifest 是否一致：没有任何 `.url` 条目用到 `service_port`（点开按钮会指向没人监听的端口）、或 `checkport=true` 与常驻入口端口并存（启动前端口检查永远过不去，实测 `error 11000`）都会告警。
+
+停用不会回收这些行：入口是静态桌面条目，与应用进程无关，`appcenter-cli stop` 之后点开入口只会
+撞反代失败页。想在停用时隐藏入口，见 `appcenter-state-db-runbook.md` 的「应用停用后桌面入口还在」
+（需要 root 生命周期，且写库失败必须静默跳过）。
+
 ## 向导、依赖和运行时
 
 四种向导文件为 `install`、`upgrade`、`uninstall`、`config`，内容都是步骤数组。字段值会作为同名环境变量交给生命周期脚本。
@@ -245,6 +251,7 @@ psql -h /var/run/postgresql -d appcenter -U postgres -tAc \
 - `ICON.PNG`：64×64。
 - `ICON_256.PNG`：256×256。
 - PNG 或 JPG、sRGB、单文件不超过 1024 KB。
+- 尺寸校验的口径（`fpk.py inspect`）：**小于**官方尺寸判 error（AppCenter 会放大，磁贴发虚）；**大于**官方尺寸记 warn——实测有官方上游包用 192×192、我们自己的包用 256×256 都能正常装机显示，所以不该判失败，但发布时仍建议回到 64/256；非正方形判 error。
 - 入口使用 `images/icon_{0}.png` 时，相应 64 和 256 图标必须存在。
 - 对深色满底、方形背景明显的应用图标，圆角**必须**用官方 squircle 曲线方式：`icon_fit.py --source <art> --out-root <pkg> --style fnos-squircle`。飞牛官方桌面图标的角是**连续曲率曲线（squircle），不是纯圆弧**——同等半径（约画布宽 24.8%）下纯圆弧会显得“更圆”。2026-09-06 一个深色满底图标先按纯圆弧交付，被以“圆角太圆了”退回，改为 1:1 复刻官方曲线后确认通过（“就这个图标的圆角风格”）。旧的纯圆弧参数（64 `r=20` / 256 `r=80`）仅保留为 legacy `fnos-rounded-dark` 风格，不作为默认。
 - 官方角剖面已内置于 `scripts/icon_fit.py`（`OFFICIAL_LEFT_PROFILE_224`：224×224 画布左缘剖面，索引=行 y、值=该行最左不透明 x，覆盖左上与左下角弧；2026-09-06 实测 trim.file-manager / trim.app-center / trim.setting / trim.docker / trim.download-center / trim.resource-manager 六个官方图标剖面完全一致，水平对称性已验证）。预渲染 mask 在 `assets/icon/official-squircle-mask-512.png`，可直接用作 alpha 或对照基准。
@@ -254,6 +261,23 @@ psql -h /var/run/postgresql -d appcenter -U postgres -tAc \
 - 圆角验证不能只看 alpha 数据，至少做三项：① 左缘剖面与官方剖面逐行对比（LANCZOS 抗锯齿会让首/末行的阈值边缘外扩几像素，属预期；中间行最大差应 ≤2px）；② 轮廓叠加：两图标 alpha 边界分用红/绿描边叠到同一画布，四角应基本重合；③ 从同一张飞牛桌面截图裁出两个磁贴（实际 48px 尺寸放大 ×6）并排目检。
 - 圆角处理后同步覆盖根级 `ICON.PNG`、`ICON_256.PNG`，以及 UI 入口图标 `ui/images/icon_64.png`、`ui/images/icon_256.png`、`ui/images/icon_0.png`、`ui/images/icon_0_256.png`（有 GIF 动图版本时同步）；若项目同时维护 `app/ui/images/`，也要同步覆盖，避免源码、payload 和 AppCenter 桌面入口不一致。
 - 换图标后必须提醒用户：飞牛桌面图标 URL 带 `Cache-Control: max-age=604800 immutable`（7 天不可变缓存），已缓存设备会继续显示旧图标，需浏览器强刷（Ctrl+Shift+R）或 App 重新登录才可见新版。验证部署时以服务端 `md5sum /vol1/@appcenter/<app>/ui/images/icon_0_256.png` 为准，不要以用户端截图为准。
+#### 入口图标：哪个槽位真的被取用（2026-09-23 nginx 取证）
+
+`app_service.icon` 只有**一个**字段，平台全站一律按 `…/xxx_%7B0%7D.png?size=256` 请求，`{0}` 由服务端解析成
+**兜底槽位 `icon_0.png`**：
+
+- **桌面大图标与应用列表小图标同源**，`icon_64` / `icon_128` 平台根本不请求 → 小图标发虚只能改 `icon_0`。
+- 想“大图标细线条 + 小图标实心”做不到，只能选一个折中；真要清晰，小图标走实心砖式构图。
+- 兜底槽位给 512 或 1024 都不会变清晰：**桌面显示尺寸约 52px**，瓶颈是显示尺寸下的墨量，不是文件分辨率。
+- 实测判据：把成品缩到 52px 后统计**半透明墨像素占比**（`0<alpha<250` 占全部墨像素）。细线 logo ≈75~80% ⇒ 肉眼
+  “发灰/虚”；实心砖 ≈6.5%。对照实验里 64×64 的第三方图标比 512×512 的细线 logo 看起来更清晰。
+- **已实测无效的杠杆**：源图 alpha 硬边化、降低原生分辨率、预锐化、alpha gamma 偏置、加低对比底衬。
+  唯一有效的是在显示尺寸下增加墨量——按各槽位**重新绘制**并加粗笔画（或把环/镜片填实），不要缩放母版。
+- 这四条不用靠人记：`scripts/fpk.py inspect` 对项目树和最终包都会核对——`{0}` 兜底槽缺失、字面 `icon` 路径不存在、
+  `icon` 路径越出 ui 目录、`desktop_applaunchname` 找不到同名 `.url` 条目，都直接报错（64/256 变体缺失记 warn）。
+  `--json` 输出里的 `details.entry_icons.<入口ID>.requested_slot` 就是平台真正会去取的那个文件。
+- 需要**设计或重设计图标本身**（细线品牌标、画稿定规范、按槽位光学加粗、深浅底双墨色、64/32/16 闸门）时，
+  读 [entry-icon-design.md](entry-icon-design.md)。
 
 发布前至少覆盖首次安装、卸载后安装新版本、启动、停止、重启、卸载保留/删除数据、权限拒绝、依赖不可用、资源不足及所有声明架构。
 
@@ -300,6 +324,8 @@ appcenter-cli stop myapp
 - `.fpk` 是 gzip 压缩 tar。
 - 外层包含 `manifest`、`app.tgz`、`cmd/`、`config/`、`wizard/` 和图标。
 - `manifest.checksum` 等于 `app.tgz` 字节内容的 MD5。
+- `cmd/*` 在归档里的可执行位**不是**硬性要求：平台按自己的 mode 安装（实测包内 644 的 `cmd/main` 装机后是 755 且正常运行）。inspect 记 warn，且**多个缺位脚本合并为一行汇总警告**（列出全部文件名），不会按文件刷屏；仍建议在源码树里保持可执行，免得本地脚本与设备行为不一致。
+- fnpack 生成的 `app.tgz` 会**重复写入** `config`、`config/privilege`、`config/resource` 等成员（字节完全相同，解包时后者覆盖前者，安装与运行都正常）。`fpk.py inspect` 对**逐字节相同**的重复成员只记 warn；内容不同的重复成员判 error，因为最终落盘的文件会取决于成员顺序。
 - **`fnpack build` 每次都会把 `manifest.checksum` 重写成当前 `app.tgz` 的真实 MD5**（实测：源树 manifest 里留着上一个版本的旧值，构建后包内自动变成新值且与 `app.tgz` 的 MD5 相等）。所以改过 `app/` 下的文件不必手工重算校验和；但**平台并不校验它**（checksum 陈旧的包照样装得上），发布前仍应确认包内该项是真值。
 - **整包 SHA-256 不可字节复现**：`fnpack` 打 tar 会带条目 mtime，gzip 头带压缩时间戳，连"重打但内容没变"都会得到不同哈希。判断两次构建是否等价要解包 `diff -r` 比载荷文件（或比载荷 MD5），不要拿整包哈希比对。
 - fnpack 会把 staging 中的 `.DS_Store` 带入产物，因此构建前必须主动清理或拒绝。同理，`app/bin/` 下的 `__pycache__/`、`*.pyc` 也会被原样打进去（实测让包体多出几十 KB 并污染载荷），跑过测试的目录打包前要清理，测试命令本身带 `PYTHONDONTWRITEBYTECODE=1`。

@@ -117,5 +117,27 @@
       "icon_fit.py does not inset the tile: the earlier inset came from artwork margins, because contain_square fits without cropping",
       "assets/icon/official-squircle-mask-512.png is an anti-aliased alpha mask (mode L, corner alpha 0), not a fully opaque image"
     ]
+  },
+  "entry_privilege_and_icon_observations_2026_09_30": {
+    "observed_at": "2026-09-16 to 2026-09-30",
+    "observation_mode": "read-write testing of the maintainer's own packages on a user-provided device with explicit authorization, plus offline measurement of rendered icon slots; host identities, addresses, ports and credentials intentionally omitted",
+    "application_shapes": [
+      "native web app with a privileged protocol port",
+      "app with multiple desktop entries"
+    ],
+    "confirmed_behaviors": [
+      "fnpack drops POSIX extension attributes when writing app.tgz, and setcap masks the mode bits to 000 which is packaged as-is, so a capability-carrying binary cannot ship inside an FPK",
+      "with run-as=package the whole lifecycle runs as the package user: netfilter changes fail with 'Permission denied (you must be root)', and rules added by root elsewhere survive stop and uninstall",
+      "a port below 1024 is reachable when run-as=root binds first and the daemon drops to the package user immediately after bind",
+      "disabling an application neither removes nor hides its desktop entries; app_service rows imported from ui/config are static desktop items and only uninstall deletes them",
+      "install and upgrade re-import entry rows from the shipped ui/config, so the entry table follows the package rather than the previous installation",
+      "desktop and application-list icons share one slot: every request is ui/images/<prefix>_{0}.png?size=256, so _64 and _128 files are never fetched",
+      "at the roughly 52px rendered size perceived sharpness tracks ink amount rather than source resolution: measured semi-transparent ink ratio was about 75-80% for a thin-line mark against about 6.5% for a solid tile, and a 64x64 reference icon read sharper than a 512x512 thin-line one",
+      "hardening source alpha, lowering native resolution, pre-sharpening and alpha gamma shifts all left that measured ratio unchanged"
+    ],
+    "corrected_beliefs": [
+      "entry icons do not look soft because a 512px source is downsampled: re-rendering the same artwork at 104px and 156px left the measured softness ratio unchanged",
+      "reducing icon padding does not thicken strokes; stroke width at a display size equals stroke ratio times display size, independent of margins"
+    ]
   }
 }

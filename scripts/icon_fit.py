@@ -93,11 +93,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--style",
         choices=sorted(STYLE_RADII),
-        default="fnos-rounded-dark",
+        default="fnos-squircle",
         help=(
-            "corner preset; fnos-squircle replicates the official fnOS corner "
-            "curve (recommended, user-verified 2026-09-06); fnos-rounded-dark "
-            "is the legacy pure-circle r20/r80 style"
+            "corner preset; fnos-squircle (default) replicates the official fnOS "
+            "corner curve, user-verified 2026-09-06; fnos-rounded-dark is the "
+            "legacy pure-circle r20/r80 style that looked \"rounder\" than official"
         ),
     )
     parser.add_argument("--radius64", type=int, help="override 64x64 corner radius")

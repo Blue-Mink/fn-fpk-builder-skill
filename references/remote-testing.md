@@ -47,7 +47,7 @@ appcenter-cli default-volume
 
 ## 部署流程
 
-实机 FPK 部署只支持“确认未安装后安装”或“卸载后重装”，不支持原位升级。目标系统存在缺陷：对已安装应用直接调用 `appcenter-cli install-fpk` 不能可靠完成更新。
+实机 FPK 部署只支持“确认未安装后安装”或“卸载后重装”，不支持原位升级。目标系统存在缺陷：对已安装应用直接调用 `appcenter-cli install-fpk` 不能可靠完成更新。逐条命令的实机输出、备份职责、装后五维验证与错误码见 [install-runbook.md](install-runbook.md)。
 
 1. 本地 `inspect` 通过并取得 SHA-256。
 2. 查询远端架构、应用状态和版本。

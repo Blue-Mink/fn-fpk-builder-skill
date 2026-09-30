@@ -568,6 +568,7 @@ python3 -m unittest discover -s tests -v
 │   └── fpk_lib/                     # manifest、归档、工具链与远程基础库
 ├── references/                      # 按需加载的 fnOS 专题规范
 ├── assets/github-actions/fpk.yml    # 可复制的发布流水线
+├── assets/install-runbook/reinstall.sh  # 测试装机四步的可执行脚本（带离线测试）
 ├── tests/                           # 标准库 unittest 与真实 fnpack 集成测试
 ├── evals/                           # 前向测试、评分和 Loop 证据
 └── .github/workflows/ci.yml         # 项目自身 CI
@@ -585,6 +586,9 @@ python3 -m unittest discover -s tests -v
 | [Native 端口设置闭环](references/native-web-port-flow.md) | 向导改端口后 `config_init`/`config_callback`/`ui/config`/DB/监听五处一致 |
 | [虚拟机承载型应用](references/vm-app-flow.md) | libvirt/KVM FPK：190 秒回调看门狗与秒回模式、平台启停真机语义、磁盘与网卡身份、地址寻踪闸门、串口自救、反代链接改写 |
 | [离线回归与真机取证](references/offline-and-live-testing.md) | 打桩戒律、结构不变量用例、抽源桩测、留痕取证、录屏、文档渲染校验 |
+| [FPK 测试装机单](references/install-runbook.md) | stop → uninstall → install → start 标准四步、装机落点分层、入口表与图标取证、失败判读与数据保全 |
+| [入口图标设计方法论](references/entry-icon-design.md) | 细线/字母品牌标在 ~52px 桌面可读的设计流程：画稿定规范、笔画层级、按槽位光学重绘、深浅底双墨色、64/32/16 闸门 |
+| [实机案例](references/case-studies.md) | Docker Web、Native 端口闭环、虚拟机承载型三类的完整交付链路、被排除的死路与验收清单 |
 | [远程测试](references/remote-testing.md) | 部署、卸载重装、日志、回滚与隔离烟测 |
 | [AppCenter 状态 runbook](references/appcenter-state-db-runbook.md) | 联合校验 AppCenter 状态、DB URL、UI config、wizard 回显和真实运行态 |
 | [远端临时补丁规范](references/temporary-remote-patches.md) | 记录调试补丁、备份、验证、回滚与是否固化进源码 |
