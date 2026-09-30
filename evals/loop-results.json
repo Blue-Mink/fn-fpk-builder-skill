@@ -1,141 +1,221 @@
 {
-  "schema_version": 1,
-  "recorded_at": "2026-07-25T03:56:45+08:00",
-  "scope": "implementation-loop evidence; no marketplace publication or GitHub remote mutation",
-  "forward_cases": [
-    {
-      "case": "greenfield-native",
-      "result": "pass",
-      "evidence": "Fresh-agent run created the requested skeleton, preserved unresolved payload choices as warnings, and did not contact a NAS."
-    },
-    {
-      "case": "existing-multiarch",
-      "result": "pass",
-      "evidence": "Real fnpack integration built amd64 and arm64 artifacts from isolated staging and independently inspected both packages without source mutation."
-    },
-    {
-      "case": "ci-migration",
-      "result": "pass",
-      "evidence": "Fresh-agent review preserved application build entry points, separated overlay transport from FPK assembly, and found actions/tool hashes pinned."
-    },
-    {
-      "case": "hostile-package-audit",
-      "result": "pass",
-      "evidence": "Fresh-agent run rejected checksum corruption, wrong architecture, unsafe paths, dangerous links, special nodes, and secret leakage without extracting untrusted input."
-    },
-    {
-      "case": "safe-in-place-deploy",
-      "result": "superseded",
-      "evidence": "The prior in-place behavior was invalidated by the confirmed fnOS overwrite-install defect. Current evaluation is safe-reinstall-deploy."
-    },
-    {
-      "case": "destructive-guard",
-      "result": "pass",
-      "evidence": "CLI tests refused uninstall before SSH when --yes was absent and used the documented parameter-error status."
-    },
-    {
-      "case": "source-drift",
-      "result": "pass",
-      "evidence": "A same-length content mutation was detected by SHA-256 regression coverage; the live source check downloaded the bounded official snapshot and matched both the pinned digest and byte count."
-    }
-  ],
-  "no_skill_baselines": [
-    {
-      "category": "new-project",
-      "result": "completed",
-      "observed_gap": "No consistent fnOS manifest validation, JSON evidence envelope, or release-readiness gates."
-    },
-    {
-      "category": "artifact-diagnosis",
-      "result": "completed",
-      "observed_gap": "Did not provide the same archive, checksum, native-binary, link, and credential audit coverage."
-    },
-    {
-      "category": "remote-lifecycle",
-      "result": "completed",
-      "observed_gap": "Lacked the same architecture selection, destructive confirmation, semantic CLI-error handling, and installed-manifest verification."
-    },
-    {
-      "category": "ci-release",
-      "result": "completed",
-      "observed_gap": "Lacked a verified executable-mode transport contract and pinned fnpack provenance."
-    }
-  ],
-  "independent_reviews": [
-    {
-      "round": 1,
-      "score": "8/20",
-      "result": "issues fixed",
-      "focus": "rollback validation, archive hardlinks, full-file secret scanning, ELF metadata, log symlink safety, cleanup, source and JSON reporting"
-    },
-    {
-      "round": 2,
-      "score": "12/20",
-      "result": "issues fixed",
-      "focus": "CI executable modes, rollback state/version proof, log redaction, clean-uninstall postcondition"
-    },
-    {
-      "round": 3,
-      "result": "reviewer execution error",
-      "focus": "No findings accepted or fabricated."
-    },
-    {
-      "round": 4,
-      "score": "19/20",
-      "result": "deliverable",
-      "dimensions": {
-        "correctness": "5/5",
-        "robustness": "4.5/5",
-        "usability": "4.5/5",
-        "documentation_consistency": "5/5"
-      },
-      "focus": "Final fixes verified for redacted error paths, documented status semantics, and physical-volume residue checking."
-    },
-    {
-      "round": 5,
-      "result": "five audit findings fixed and regression-covered",
-      "focus": "Lifecycle binaries outside app/, manifest semantic constraints, complete installed-payload hashes before start, uninstall noinstall postcondition, and full-content source drift detection."
-    }
-  ],
-  "live_device": {
-    "scope": "user-authorized LAN fnOS; isolated fpk-skill-smoke-* application only",
-    "result": "pass",
-    "lifecycle": [
-      "build",
-      "inspect",
-      "upload digest verification",
-      "install",
-      "start",
-      "status",
-      "logs",
-      "stop",
-      "uninstall",
-      "residue check"
-    ],
-    "existing_applications_modified": false,
-    "existing_reference_application_final_status": "running",
-    "residue_after_scoped_cleanup": false,
-    "artifact_sha256": "d056034b771a16ad93f0a25ce31c5355d58d4212458e9ce120d784f9ee00278b",
-    "installed_manifest_sha256": "0545f4d7b71fbfc4dba23ad7a15c95cd46d6bdaf76209eddf63e7fa387de1589",
-    "payload_checksum_manifest_sha256": "c9a3ad21c8af429b556f41476c5ba33f1334d4130cebef9995da4d2a9f834ef4",
-    "payload_regular_files_verified": 3
+ "schema_version": 1,
+ "recorded_at": "2026-07-25T03:56:45+08:00",
+ "scope": "implementation-loop evidence; no marketplace publication or GitHub remote mutation",
+ "forward_cases": [
+  {
+   "case": "greenfield-native",
+   "result": "pass",
+   "evidence": "Fresh-agent run created the requested skeleton, preserved unresolved payload choices as warnings, and did not contact a NAS."
   },
-  "local_verification": {
-    "macos_round_1": {
-      "tests": 63,
-      "result": "pass",
-      "real_fnpack_version": "1.2.3"
-    },
-    "macos_round_2": {
-      "tests": 63,
-      "result": "pass",
-      "real_fnpack_version": "1.2.3"
-    },
-    "linux_amd64_clean_room": {
-      "tests": 63,
-      "result": "pass",
-      "real_fnpack_version": "1.2.3",
-      "environment": "python:3.12-slim with a read-only source mount copied into a fresh container directory"
-    }
+  {
+   "case": "existing-multiarch",
+   "result": "pass",
+   "evidence": "Real fnpack integration built amd64 and arm64 artifacts from isolated staging and independently inspected both packages without source mutation."
+  },
+  {
+   "case": "ci-migration",
+   "result": "pass",
+   "evidence": "Fresh-agent review preserved application build entry points, separated overlay transport from FPK assembly, and found actions/tool hashes pinned."
+  },
+  {
+   "case": "hostile-package-audit",
+   "result": "pass",
+   "evidence": "Fresh-agent run rejected checksum corruption, wrong architecture, unsafe paths, dangerous links, special nodes, and secret leakage without extracting untrusted input."
+  },
+  {
+   "case": "safe-in-place-deploy",
+   "result": "superseded",
+   "evidence": "The prior in-place behavior was invalidated by the confirmed fnOS overwrite-install defect. Current evaluation is safe-reinstall-deploy."
+  },
+  {
+   "case": "destructive-guard",
+   "result": "pass",
+   "evidence": "CLI tests refused uninstall before SSH when --yes was absent and used the documented parameter-error status."
+  },
+  {
+   "case": "source-drift",
+   "result": "pass",
+   "evidence": "A same-length content mutation was detected by SHA-256 regression coverage; the live source check downloaded the bounded official snapshot and matched both the pinned digest and byte count."
   }
+ ],
+ "no_skill_baselines": [
+  {
+   "category": "new-project",
+   "result": "completed",
+   "observed_gap": "No consistent fnOS manifest validation, JSON evidence envelope, or release-readiness gates."
+  },
+  {
+   "category": "artifact-diagnosis",
+   "result": "completed",
+   "observed_gap": "Did not provide the same archive, checksum, native-binary, link, and credential audit coverage."
+  },
+  {
+   "category": "remote-lifecycle",
+   "result": "completed",
+   "observed_gap": "Lacked the same architecture selection, destructive confirmation, semantic CLI-error handling, and installed-manifest verification."
+  },
+  {
+   "category": "ci-release",
+   "result": "completed",
+   "observed_gap": "Lacked a verified executable-mode transport contract and pinned fnpack provenance."
+  }
+ ],
+ "independent_reviews": [
+  {
+   "round": 1,
+   "score": "8/20",
+   "result": "issues fixed",
+   "focus": "rollback validation, archive hardlinks, full-file secret scanning, ELF metadata, log symlink safety, cleanup, source and JSON reporting"
+  },
+  {
+   "round": 2,
+   "score": "12/20",
+   "result": "issues fixed",
+   "focus": "CI executable modes, rollback state/version proof, log redaction, clean-uninstall postcondition"
+  },
+  {
+   "round": 3,
+   "result": "reviewer execution error",
+   "focus": "No findings accepted or fabricated."
+  },
+  {
+   "round": 4,
+   "score": "19/20",
+   "result": "deliverable",
+   "dimensions": {
+    "correctness": "5/5",
+    "robustness": "4.5/5",
+    "usability": "4.5/5",
+    "documentation_consistency": "5/5"
+   },
+   "focus": "Final fixes verified for redacted error paths, documented status semantics, and physical-volume residue checking."
+  },
+  {
+   "round": 5,
+   "result": "five audit findings fixed and regression-covered",
+   "focus": "Lifecycle binaries outside app/, manifest semantic constraints, complete installed-payload hashes before start, uninstall noinstall postcondition, and full-content source drift detection."
+  }
+ ],
+ "live_device": {
+  "scope": "user-authorized LAN fnOS; isolated fpk-skill-smoke-* application only",
+  "result": "pass",
+  "lifecycle": [
+   "build",
+   "inspect",
+   "upload digest verification",
+   "install",
+   "start",
+   "status",
+   "logs",
+   "stop",
+   "uninstall",
+   "residue check"
+  ],
+  "existing_applications_modified": false,
+  "existing_reference_application_final_status": "running",
+  "residue_after_scoped_cleanup": false,
+  "artifact_sha256": "d056034b771a16ad93f0a25ce31c5355d58d4212458e9ce120d784f9ee00278b",
+  "installed_manifest_sha256": "0545f4d7b71fbfc4dba23ad7a15c95cd46d6bdaf76209eddf63e7fa387de1589",
+  "payload_checksum_manifest_sha256": "c9a3ad21c8af429b556f41476c5ba33f1334d4130cebef9995da4d2a9f834ef4",
+  "payload_regular_files_verified": 3
+ },
+ "local_verification": {
+  "macos_round_1": {
+   "tests": 63,
+   "result": "pass",
+   "real_fnpack_version": "1.2.3"
+  },
+  "macos_round_2": {
+   "tests": 63,
+   "result": "pass",
+   "real_fnpack_version": "1.2.3"
+  },
+  "linux_amd64_clean_room": {
+   "tests": 63,
+   "result": "pass",
+   "real_fnpack_version": "1.2.3",
+   "environment": "python:3.12-slim with a read-only source mount copied into a fresh container directory"
+  }
+ },
+ "forward_run_2026_09_30": {
+  "schema_version": 1,
+  "recorded_at": "2026-09-30T22:30:00+08:00",
+  "scope": "blind forward evaluation, 8 cases x 2 arms (skill/noskill), fresh subagents, offline fixtures only; operator report at work/eval_run/report-2026-09-30.md (outside the skill tree, contains host-specific paths)",
+  "model_caveat": "Mid-run outage: Qwen3.8-Flash-Next-FP8 backend 502 from 13:50+08 killed in-flight tasks. Final mix: 8 arms flash-only, 4 arms qwen3.8-27b-fp8-only, 4 arms mixed (flash work + 27b takeover). Only same-model same-round case pair: greenfield-native (27b). Per-case deltas are skill-vs-task findings with model uncontrolled; controlled re-run is the follow-up.",
+  "cases": [
+   {
+    "case": "greenfield-native",
+    "skill": 9,
+    "noskill": 8,
+    "delta": "+1",
+    "note": "same-model pair (27b): skill's pinned fnpack + inspect caught template defects (icon_0 slot, package user); noskill drove fnpack 1.2.4 directly with self-built checks"
+   },
+   {
+    "case": "existing-multiarch",
+    "skill": 9,
+    "noskill": 8,
+    "delta": "+1",
+    "note": "skill: hash-verified fnpack, per-arch inspect ok, negative control; noskill: platform enum grounded from fnpack's own validation strings, 37/37 inspections"
+   },
+   {
+    "case": "ci-migration",
+    "skill": 8,
+    "noskill": 8,
+    "delta": "0",
+    "note": "both solid; skill: SHA-pinned actions + verbatim sim + 3 negative gates (B3 partial: whole-package bytes not run-to-run reproducible, disclosed); noskill: floating @v4 pins only (B5 partial), byte-reproducible pure-Python assembler"
+   },
+   {
+    "case": "hostile-package-audit",
+    "skill": 9,
+    "noskill": 9,
+    "delta": "0",
+    "note": "parity: all planted defects caught by both (zeroed checksum, ../escaped-payload, arm64-ELF-under-x86); no execution of untrusted content in either trace"
+   },
+   {
+    "case": "safe-reinstall-deploy",
+    "skill": 9,
+    "noskill": 10,
+    "delta": "-1",
+    "note": "noskill: textbook full stop→uninstall→gate→install→start with byte-level 3-way verification; skill: skipped start (app already running post-install, documented deviation)"
+   },
+   {
+    "case": "destructive-guard",
+    "skill": 9,
+    "noskill": 8,
+    "delta": "+1",
+    "note": "skill: fnos.py uninstall wrapper, doctor-first, verified removal; noskill: strongest evidence (rollback snapshot, blast-radius analysis, dry-run rehearsal) minus one out-of-workspace write"
+   },
+   {
+    "case": "source-drift",
+    "skill": 6,
+    "noskill": 8,
+    "delta": "-2",
+    "note": "HEADLINE GAP: skill's sources --check caught the planted toolchain drift but missed 2 ledger-internal inconsistencies (captured_at vs observation dates; block key outside window) and concluded 'no drift'; noskill built a 41-check auditor + 10-case mutation self-trust and caught both. Also: skill arm made one false __pycache__ provenance claim (only A3 blemish in the run)"
+   },
+   {
+    "case": "vm-app-lifecycle",
+    "skill": 8,
+    "noskill": 7,
+    "delta": "+1",
+    "note": "both converged on the canonical fix set (fast-return callback + worker + state machine; checkport=false + status-0 + non-blocking stop; bookkeeping reconcile + token-gated watcher); differentiator: skill arm's suite executes OLD bytes and proves each fix (noskill B5 partial: old sources never executed)"
+   }
+  ],
+  "totals": {
+   "skill": "67/80 (avg 8.38)",
+   "noskill": "66/80 (avg 8.25)",
+   "delta": "+2 (4 wins / 2 wins / 2 ties)"
+  },
+  "integrity": {
+   "answer_access": "0 arms read rubric/expected-assertions/answer material",
+   "network_or_device": "0 arms contacted network or real NAS (fixture doubles only)",
+   "out_of_scope": "minor, all in verdicts: 5 small helper files written into the operator agent workspace by round-1 arms; 2 round-2 arms ran broad find over the eval base (sibling filenames + evals-private dir listing, no content reads, undisclosed); vm/noskill read 5 real-repo wizard/install files; ci/noskill left extraction scratch in operator scratch area",
+   "verdicts": "16/16 valid JSON after 3 grader retries (1 doom-loop crash, 1 timeout, 1 truncated JSON)"
+  },
+  "skill_improvement_candidates": [
+   "sources --check scope disclaimer: toolchain/source freshness only, NOT ledger/metadata internal consistency",
+   "evidence-before-claims rule: assert pre-existing state (mtimes/hashes) from own trace, not memory",
+   "promote 'every fix needs a test that fails on the old bytes' to SKILL.md safety invariants (vm skill-arm methodology)"
+  ]
+ }
 }
