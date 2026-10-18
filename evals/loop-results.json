@@ -115,9 +115,9 @@
   "existing_applications_modified": false,
   "existing_reference_application_final_status": "running",
   "residue_after_scoped_cleanup": false,
-  "artifact_sha256": "d056034b771a16ad93f0a25ce31c5355d58d4212458e9ce120d784f9ee00278b",
-  "installed_manifest_sha256": "0545f4d7b71fbfc4dba23ad7a15c95cd46d6bdaf76209eddf63e7fa387de1589",
-  "payload_checksum_manifest_sha256": "c9a3ad21c8af429b556f41476c5ba33f1334d4130cebef9995da4d2a9f834ef4",
+  "artifact_sha256": "<redacted: unpublished smoke artifact>",
+  "installed_manifest_sha256": "<redacted: unpublished smoke artifact>",
+  "payload_checksum_manifest_sha256": "<redacted: unpublished smoke artifact>",
   "payload_regular_files_verified": 3
  },
  "local_verification": {

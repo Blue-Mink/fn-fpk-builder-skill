@@ -584,11 +584,12 @@ python3 -m unittest discover -s tests -v
 | [公开发布净化](references/public-release-hygiene.md) | GitHub/FnDepot 发布前排除测试报告、设备信息、日志和凭据 |
 | [Docker 应用全流程](references/docker-app-flow.md) | Docker Web FPK 构建、生命周期、端口配置、AppCenter 启停和验证方法 |
 | [Native 端口设置闭环](references/native-web-port-flow.md) | 向导改端口后 `config_init`/`config_callback`/`ui/config`/DB/监听五处一致 |
+| [Go 原生服务全流程](references/go-native-service-flow.md) | 前端嵌入二进制的常驻服务：单版本源、三条部署路径（二进制热替换 / daemon RPC 就地升级 / 完整卸载重装）、运行态版本判定与 x86-only 约定 |
 | [虚拟机承载型应用](references/vm-app-flow.md) | libvirt/KVM FPK：190 秒回调看门狗与秒回模式、平台启停真机语义、磁盘与网卡身份、地址寻踪闸门、串口自救、反代链接改写 |
 | [离线回归与真机取证](references/offline-and-live-testing.md) | 打桩戒律、结构不变量用例、抽源桩测、留痕取证、录屏、文档渲染校验 |
 | [FPK 测试装机单](references/install-runbook.md) | stop → uninstall → install → start 标准四步、装机落点分层、入口表与图标取证、失败判读与数据保全 |
 | [入口图标设计方法论](references/entry-icon-design.md) | 细线/字母品牌标在 ~52px 桌面可读的设计流程：画稿定规范、笔画层级、按槽位光学重绘、深浅底双墨色、64/32/16 闸门 |
-| [实机案例](references/case-studies.md) | Docker Web、Native 端口闭环、虚拟机承载型三类的完整交付链路、被排除的死路与验收清单 |
+| [实机案例](references/case-studies.md) | Docker Web、Native 端口闭环、虚拟机承载型、Go 原生服务四类的完整交付链路、被排除的死路与验收清单 |
 | [远程测试](references/remote-testing.md) | 部署、卸载重装、日志、回滚与隔离烟测 |
 | [AppCenter 状态 runbook](references/appcenter-state-db-runbook.md) | 联合校验 AppCenter 状态、DB URL、UI config、wizard 回显和真实运行态 |
 | [远端临时补丁规范](references/temporary-remote-patches.md) | 记录调试补丁、备份、验证、回滚与是否固化进源码 |

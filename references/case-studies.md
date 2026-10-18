@@ -110,3 +110,44 @@
 4. 默认入口、业务子入口（如 `/ha`）、网络修复页三条链路 + 直连虚拟机端口对照全部通过；无网络场景串口自救可用且不失联。
 5. 离线回归全绿，且每条 bug 修复用例能在旧字节上失败；结构不变量（锁可重入、控制路径不透传、禁用命令串）有用例守住。
 6. 包内无 `__pycache__`、无设备地址/凭据/token；首启耗时口径在向导、入口页、README 三处一致。
+
+---
+
+## Case Study: Go 原生服务 FPK（前端嵌入 + 高频迭代 + x86 only）
+
+> 完整流程见 [references/go-native-service-flow.md](go-native-service-flow.md)。
+
+样例应用是 Go 后端 + SPA 前端（构建产物嵌入二进制）的常驻服务 FPK，经历数百个版本的迭代。难点不在单次打包，而在把「构建→部署→验证→发版」压成分钟级可重复流水线，且部署路径选错会丢数据或假成功。
+
+### 最终有效组合
+
+1. **单一版本源**：版本号只写在 `manifest`；`build.sh` 读它 → 前端构建 → `CGO_ENABLED=0 go build -ldflags "-s -w -X main.Version=$V"` → staging 平铺（二进制 + `web/`，`app.tgz` 在内容目录内部打包，无外层前缀）→ fnpack。
+2. **部署三态严格区分**：
+   - 开发迭代 = **二进制热替换**（按端口找真实 pid → SIGTERM 等真退出 → 换二进制+`web/` → 生命周期脚本带全套 `TRIM_*` 环境拉起）；
+   - 正式换版 = **appcenter daemon RPC 就地升级**（私有 unix socket `/rpc/v1/update/task`，保 `@appdata` 数据）；
+   - 改注册信息（端口/入口/manifest 字段）= **完整卸载重装**（先备份数据）。
+3. **版本判定**：只信运行进程的 `/api/version` 回显（= 构建注入值）；平台面板版本显示可滞后，磁盘 sha 与 FPK sha 交叉核对「磁盘是否已新版」。
+4. **x86 only 约定**：`platform=x86`、只挂 x86 资产、商店侧同样只声明 x86；顺手补打未验证 arm 包是事故源。
+
+### 已排除的坑
+
+- `install-fpk` 对已装应用是 **no-op**（rc=0、二进制没换、DB 不更新）——「覆盖安装成功」是假成功，换版必须停→换→拉起。
+- 运行中二进制 `cp` 覆盖报 `text file busy`；先停进程或 `mv` 原子替换。
+- 手动 kill 后平台**不 respawn**；残留进程占端口 → 平台 start 报 `APP_AUTO_START_FAILED_PORT_USAGE`（用户看到「点启动没反应」）。
+- 平台 `stop`/`status` 可能失准（旧进程 PPID=1 还活着）——判活看真实进程与端口持有者。
+- **CLI「升级」= 卸载+重装，毁 `@appdata`**——正式升级只能走 daemon RPC。
+- daemon 换包后**不一定重启进程**（DB 已新版、进程仍旧版）→ 精确 pid 直杀 + 平台 start。
+- 同版本就地升级被拒 → 目标版本与已装相同时先 bump。
+- fnOS `/tmp` 是 tmpfs 且被持续回收：Go 工具链/fnpack/构建产物/部署暂存放持久卷；构建-部署合成单条原子命令减少暴露窗口。
+- 官方 fnpack 下载 URL 间歇 404 → 流水线保留「已验证本地副本」兜底（版本+哈希须与 provenance 一致）。
+- scp 静默失败（rc=0 无输出）→ 传输后两端 sha256 比对。
+- `go:embed` 前端：改磁盘 `web/` 对已嵌入内容无效，前端有 diff 必须整包重建；只改 Go 可跳过 `npm ci` 走快速路径。
+- Release 资产上传必须走 release `upload_url`（uploads.github.com）；旧 assets POST 路径恒 404；新资产 ~60s CDN 延迟先 404 属正常。
+
+### 交付验证 checklist
+
+1. 后端测试（含 `-race`）+ 前端 tsc 全绿；manifest 版本 = 二进制回显版本 = 产物文件名（三处一致）。
+2. 热替换路径：`/api/version` 目标版本 + 核心 API 冒烟 + UI 入口 200。
+3. 就地升级路径：数据指纹（config sha + 目录项数）前后一致 + DB 登记版本 + 进程 RUNNING。
+4. FPK sha256 已报告；仅改 Go 的版本确认前端产物哈希未变。
+5. Release 资产 digest 与本地 sha256 免下载核对一致。

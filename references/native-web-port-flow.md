@@ -12,7 +12,7 @@
 
 ```ini
 appname               = native-web-demo
-version               = 0.7.17
+version               = 1.0.0
 platform              = x86
 ctl_stop              = true
 service_port          = 18080

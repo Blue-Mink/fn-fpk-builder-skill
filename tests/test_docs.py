@@ -137,5 +137,50 @@ class DocumentationTests(unittest.TestCase):
                         )
 
 
+    def test_shipped_json_carries_no_secrets_or_unpublished_hashes(self) -> None:
+        """Shipped JSON is as public as the markdown: no device identity, no build hashes.
+
+        ``references/provenance.json`` pins public tool and documentation hashes
+        (``official_docs``, ``fnpack.downloads``); hashes of smoke artifacts that
+        were never published must never appear.
+        """
+
+        import json as _json
+
+        allowed_prefixes = ("official_docs", "fnpack.downloads", "fnpack.release")
+        patterns = [
+            ("内网 IPv4", r"\b(?:192\.168|10\.\d|172\.(?:1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}\b"),
+            ("意外的公网 IPv4", r"\b(?!127\.0\.0\.1\b|0\.0\.0\.0\b)\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b"),
+            ("Token 形态", r"\b(?:ghp_|github_pat_|gho_|ghs_|sk-[A-Za-z0-9]{20,})"),
+            ("私有工作区路径", r"/vol1/@appshare/com\.dustinky"),
+        ]
+        json_files = sorted(ROOT.glob("evals/*.json")) + sorted(ROOT.glob("references/*.json"))
+
+        def walk(node, trail=()):
+            if isinstance(node, dict):
+                for key, value in node.items():
+                    yield from walk(value, trail + (key,))
+            elif isinstance(node, list):
+                for index, value in enumerate(node):
+                    yield from walk(value, trail + (str(index),))
+            else:
+                yield trail, node
+
+        for path in json_files:
+            try:
+                data = _json.loads(path.read_text(encoding="utf-8"))
+            except Exception as error:  # noqa: BLE001 - report malformed shipped JSON
+                self.fail(f"{path.name} 不是合法 JSON: {error}")
+            for trail, value in walk(data):
+                if not isinstance(value, str):
+                    continue
+                joined = ".".join(trail)
+                for name, pattern in patterns:
+                    self.assertIsNone(re.search(pattern, value),
+                                      f"{name}: {path.name}:{joined} = {value[:80]}")
+                if re.fullmatch(r"[0-9a-f]{64}", value) and not joined.startswith(allowed_prefixes):
+                    self.fail(f"未发布构件哈希出现在 {path.name}:{joined}")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -10,7 +10,7 @@
 - 对应 `.fpk.sha256`。
 - 必要源码包或可审计源码目录。
 - `manifest`、`README.md`、图标、`ui/config`、`wizard/`、`cmd/` 等安装所需文件。
-- FnDepot 索引文件，如 `fnpack.json` / `fndepot.json`。
+- FnDepot 索引文件：`fnpack.json`（V2 唯一入口；`fndepot.json` 已废弃，客户端不再探测）。
 
 ## 不应公开的内容
 
@@ -38,7 +38,7 @@ grep -RInE 'ghp_[A-Za-z0-9]|github_pat_|gho_|ghs_|sshpass|id_rsa|BEGIN [A-Z ]*PR
 ## GitHub / FnDepot 发布规则
 
 - 同应用新版本是覆盖既有目录还是新增目录，先让用户明确确认。
-- `fnpack.json` 与 `fndepot.json` 保持现有格式、排序和字段风格；同一应用通常只保留当前主版本 key，除非用户要求并行多个版本。
+- `fnpack.json` 保持现有格式、排序和字段风格（V2：`schema_version:"2"` + `source_info` + `apps`）；同一应用通常在 `releases` 下保留最新版本，旧版本节点可逐步清理，除非需要回滚。
 - 商店图标优先指向清晰的 256 图标，例如 `./sample-app/ICON_256.PNG`，同时确保包内根图标与 UI 图标同步。
 - 上传同名 Release asset 后，重新下载验证 HTTP 状态、大小和 SHA-256；不要只相信上传 API 返回成功。
 - 如果聊天或日志里出现过 GitHub PAT/API token，发布完成后提醒用户撤销并重建；不要在提交、Release notes 或 issue 中复述 token。
@@ -68,7 +68,7 @@ grep -RInE 'ghp_[A-Za-z0-9]|github_pat_|gho_|ghs_|sshpass|id_rsa|BEGIN [A-Z ]*PR
 
 ## 索引 JSON 卫生（FnDepot 类清单仓库）
 
-- `fnpack.json` 与 `fndepot.json` 保持**字节一致**；任何改动在推送前后都跑 `json.loads` 严格校验。
+- `fnpack.json` 任何改动在推送前后都跑 `json.loads` 严格校验（V2 无 `fndepot.json` 副本，不要再维护双文件）。
 - 在 heredoc / shell 字符串里给 JSON 字段写换行要用 `\\n`——单个 `\n` 会注入裸换行符破坏整个 JSON。
 - **JSON 没有注释语法**：要临时下线某条目，把条目原文摘到 `disabled/<app>.json`，另加 `disabled/README.md` 写下线原因与恢复步骤，而不是在索引里塞 `//`。
 - 二进制只进 Release，不进源码树；树内只放 `<app>/fpk.sha256` 之类的校验文件（命名统一到 `fpk.sha256`，Release 资产名仍是 `<fpk>.sha256`）。

@@ -281,6 +281,11 @@ def command_inspect(args: argparse.Namespace) -> Report:
 
 
 def _fetch_url_snapshot(url: str) -> tuple[bytes, str]:
+    """下载远端快照（只读）。
+
+    网络边界：仅访问调用方传入的 URL（通常是 GitHub release 资产地址），
+    不向其它域名发送数据、不上传本地文件；请求不携带任何凭据。
+    """
     request = urllib.request.Request(
         url,
         headers={"User-Agent": "fn-fpk-builder-skill/1"},
