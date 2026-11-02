@@ -39,7 +39,7 @@ grep -RInE 'ghp_[A-Za-z0-9]|github_pat_|gho_|ghs_|sshpass|id_rsa|BEGIN [A-Z ]*PR
 
 - 同应用新版本是覆盖既有目录还是新增目录，先让用户明确确认。
 - `fnpack.json` 保持现有格式、排序和字段风格（V2：`schema_version:"2"` + `source_info` + `apps`）；同一应用通常在 `releases` 下保留最新版本，旧版本节点可逐步清理，除非需要回滚。
-- 商店图标优先指向清晰的 256 图标，例如 `./sample-app/ICON_256.PNG`，同时确保包内根图标与 UI 图标同步。
+- 商店图标（`icon_url` 指向的树内 `ICON.PNG` / `ICON_256.PNG`）放**同一张 ≥512 母版**，不做 64/256 降采样——商店卡片直接拿这张图显示，64 小图会糊；口径见 official-contract.md「图标清晰度」。
 - 上传同名 Release asset 后，重新下载验证 HTTP 状态、大小和 SHA-256；不要只相信上传 API 返回成功。
 - 如果聊天或日志里出现过 GitHub PAT/API token，发布完成后提醒用户撤销并重建；不要在提交、Release notes 或 issue 中复述 token。
 

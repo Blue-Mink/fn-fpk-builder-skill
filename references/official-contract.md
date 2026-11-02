@@ -251,7 +251,7 @@ psql -h /var/run/postgresql -d appcenter -U postgres -tAc \
 - `ICON.PNG`：64×64。
 - `ICON_256.PNG`：256×256。
 - PNG 或 JPG、sRGB、单文件不超过 1024 KB。
-- 尺寸校验的口径（`fpk.py inspect`）：**小于**官方尺寸判 error（AppCenter 会放大，磁贴发虚）；**大于**官方尺寸记 warn——实测有官方上游包用 192×192、我们自己的包用 256×256 都能正常装机显示，所以不该判失败，但发布时仍建议回到 64/256；非正方形判 error。
+- 尺寸校验的口径（`fpk.py inspect`）：**小于**官方尺寸判 error（AppCenter 会放大，磁贴发虚）；**大于**官方尺寸记 warn——实测有官方上游包用 192×192、我们自己的包用 256×256 都能正常装机显示，所以不该判失败；非正方形判 error。高清化按下方「图标清晰度：两条取图通道与全槽位高清方案」把全槽位铺成 ≥512（旧「发布仍建议回到 64/256」的做法会让详情弹窗发糊，已废弃）。
 - 入口使用 `images/icon_{0}.png` 时，相应 64 和 256 图标必须存在。
 - 对深色满底、方形背景明显的应用图标，圆角**必须**用官方 squircle 曲线方式：`icon_fit.py --source <art> --out-root <pkg> --style fnos-squircle`。飞牛官方桌面图标的角是**连续曲率曲线（squircle），不是纯圆弧**——同等半径（约画布宽 24.8%）下纯圆弧会显得“更圆”。2026-09-06 一个深色满底图标先按纯圆弧交付，被以“圆角太圆了”退回，改为 1:1 复刻官方曲线后确认通过（“就这个图标的圆角风格”）。旧的纯圆弧参数（64 `r=20` / 256 `r=80`）仅保留为 legacy `fnos-rounded-dark` 风格，不作为默认。
 - 官方角剖面已内置于 `scripts/icon_fit.py`（`OFFICIAL_LEFT_PROFILE_224`：224×224 画布左缘剖面，索引=行 y、值=该行最左不透明 x，覆盖左上与左下角弧；2026-09-06 实测 trim.file-manager / trim.app-center / trim.setting / trim.docker / trim.download-center / trim.resource-manager 六个官方图标剖面完全一致，水平对称性已验证）。预渲染 mask 在 `assets/icon/official-squircle-mask-512.png`，可直接用作 alpha 或对照基准。
@@ -278,6 +278,36 @@ psql -h /var/run/postgresql -d appcenter -U postgres -tAc \
   `--json` 输出里的 `details.entry_icons.<入口ID>.requested_slot` 就是平台真正会去取的那个文件。
 - 需要**设计或重设计图标本身**（细线品牌标、画稿定规范、按槽位光学加粗、深浅底双墨色、64/32/16 闸门）时，
   读 [entry-icon-design.md](entry-icon-design.md)。
+
+#### 图标清晰度：两条取图通道与「全槽位高清」方案（2026-11-02 浏览器 + curl 实证）
+
+飞牛取应用图标不是一条路，而是**两条互不相干的通道**：
+
+| 通道 | URL | 用途 | 取的图 |
+|---|---|---|---|
+| serviceicon | `serviceicon/<app>/ui/images/icon_%7B0%7D.png?size=N` | 桌面 / launchpad / 已安装列表 | `ui/images/` 下的槽位图 |
+| 详情弹窗 | `app-center-static/icon/<app>/icon.png` | 应用中心点开卡片的详情弹窗 | FPK 根目录的 `ICON.PNG` |
+
+两个坑叠加会只让「弹窗糊、桌面正常」：
+
+1. **根 `ICON.PNG` 照「ICON=64」惯例只放 64×64** → 弹窗拿小图放大，发糊。
+2. **serviceicon 服务端只认 `64/128/256` 三个槽位**，`?size>=512`（或没带 size）一律 fallback 到 `icon_64`，而不是 `icon_0` —— 桌面原图是 512、但 `icon_64` 槽位是小图时照样糊。
+
+**高清方案（无死角）**：把**同一张 ≥512 的母版**原样铺满全部 7 个图标槽位：
+
+```
+根 ICON.PNG、根 ICON_256.PNG、
+ui/images/icon_0.png / icon_64.png / icon_128.png / icon_256.png / icon_512.png
+```
+
+这样服务端无论走哪条通道、取哪个槽位、传什么 size，拿到的都是同一张大图，由前端自己缩放 → 全场景清晰。走动画图标的（桌面取 `icon_0.gif`、列表/弹窗仍取 png），gif 与 png 两套都要同步高清化。
+**不要再按「ICON=64 / ICON_256=256」分别降采样**（官方规格 64/256 是下限不是高清目标；分开降采样会让详情弹窗糊）。
+
+验证：① curl 直测两条通道，serviceicon `size=64/256/512` 与 `icon.png` 都应返回同一张 ≥512；② 浏览器清缓存强刷后，详情弹窗 `icon.png` 的 `naturalWidth` 应从 64 变 512、桌面图标从 256 变 512。
+
+**第三条路：商店索引（`fnpack.json` 的 `icon_url`）**。商店卡片图标走的是清单索引文件里 app 条目的 `icon_url` 字段（指向仓库树内 `<app>/ICON.PNG` 的 raw 直链），与装机后的桌面/弹窗图标是**两套独立文件**。树内惯例 `<app>/ICON.PNG`=64、`<app>/ICON_256.PNG`=256（同样是官方规格下限，不是高清目标）。高清化 = 把**树内这两个文件都换成同一张 ≥512 母版**，`icon_url` 字段本身不用改（路径不变，改的是文件内容）；否则商店卡片图标仍糊。换完推送后商店客户端通常有本地缓存，需让用户「检查更新」/刷新（不自动刷源）。
+
+设备侧批量热改可用一段通用脚本（泛化变量）：把母版 LANCZOS 到 512，铺满 `根 ICON.PNG` + `根 ICON_256.PNG` + `ui/images` 五槽位，并按原文件保留属主/权限；根目录在 `/var/apps/<app>/`，payload 槽位在 `/vol1/@appcenter/<app>/ui/images/`。
 
 发布前至少覆盖首次安装、卸载后安装新版本、启动、停止、重启、卸载保留/删除数据、权限拒绝、依赖不可用、资源不足及所有声明架构。
 
