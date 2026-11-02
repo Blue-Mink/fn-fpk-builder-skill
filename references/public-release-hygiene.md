@@ -45,6 +45,12 @@ grep -RInE 'ghp_[A-Za-z0-9]|github_pat_|gho_|ghs_|sshpass|id_rsa|BEGIN [A-Z ]*PR
 
 ## Git 推送与 blob 级核验
 
+**推送前固定准备（每次都要做，顺序别省）**：
+
+1. **先同步远端**：`git fetch origin --prune`；存在多个远端（如先内网审核、后公开仓）时逐个 `git fetch <remote> --prune`。本地 `origin/main` 这类跟踪引用会因网络抖动（fetch 失败/超时）**悄悄过时**，绝不能拿它判断"领先/落后"——真实状态以 `git ls-remote` 或刚 fetch 完的远端引用为准，不能只看本地那条过时的跟踪引用。
+2. **确保干净提交分支**：`git status --porcelain` 必须为空（没有未提交/未跟踪的改动混进来），且要推的提交必须基于**最新远端 tip**、能 fast-forward，不能有分叉。
+3. 改动期间若远端又进了新提交（多人/多会话共维护同一仓库是常态），先 `git pull --rebase` 对齐再推，别硬推制造分叉。
+
 - **push 前必须确认新提交真的存在**：新建克隆没有 `user.name`/`user.email` 时 `git commit` 直接失败，而紧随的 `git push HEAD:main` 会 `rc=0` 报成功（其实等于 up-to-date，什么都没推）。养成 `git log --oneline -1` 再看一眼的习惯。
 - 全局 git 常配下载加速镜像的 `insteadOf`，会把 push 目标改写掉并报 `could not read Username for '<mirror>'`。绕过：`env GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null git -c credential.helper= push <token-url> HEAD:main`。
 - **整库同步不要走 Git Data API**：`POST /git/trees` 的 `content` 与 `POST /git/blobs` 的 `_encoding:"base64"` 都**不解码**，会把 base64 字符串当正文存下来（blob SHA 变成那段 base64 文本的哈希，内容全错且很难发现）。正确做法是真 `git push`：浅克隆目标 → `git fetch <本地仓库> refs/tags/vX` → 用 `GIT_INDEX_FILE` 临时索引 `read-tree <main>` → 清旧子树 `git ls-files --cached <前缀> | git update-index --force-remove --stdin`（不清会 `read-tree --prefix` 报 overlaps）→ `read-tree --prefix=<前缀> <tree>` → `write-tree`/`commit-tree` → push。
