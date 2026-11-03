@@ -88,6 +88,22 @@ source project
 
 同目录生成 `{filename}.sha256`，内容使用标准的 `hash  filename` 格式。
 
+只构建一个架构时：
+
+```bash
+# ARM64 单架构
+python3 "$SKILL_DIR/scripts/fpk.py" build --project ./pkg --out ./dist \
+  --arch arm64 --overlay-arm64 ./artifacts/arm64 --json
+
+# x86 单架构
+python3 "$SKILL_DIR/scripts/fpk.py" build --project ./pkg --out ./dist \
+  --arch amd64 --overlay-amd64 ./artifacts/amd64 --json
+```
+
+`--arch` 只接受 `amd64` / `arm64` / `all` / `both`；`x86`、`arm` 都不是合法值。
+单架构产物同样要用 `inspect --target-arch arm64`（或 `amd64`）复核，确认
+`detected_elf_architectures` 与目标一致、manifest `platform` 为 `arm`（或 `x86`）。
+
 ## 架构产物接入
 
 公共项目目录提供 manifest、cmd、config、wizard、图标和架构无关文件。overlay 只包含需要替换或新增的相对路径。
@@ -151,7 +167,7 @@ source project
 
 1. 安全列出外层 tar，拒绝路径穿越、绝对路径、重复目标和危险链接。
 2. 读取 manifest，验证 appname、version、platform 与期望一致。
-3. 将 `app.tgz` 流式写入受控临时文件，校验 `manifest.checksum`。
+3. 将 `app.tgz` 流式写入受控临时文件，校验 `manifest.checksum`（= `app.tgz` 字节内容的 **MD5**，不是 FPK 整包的 SHA-256；`fnpack build` 每次会把它重写成真实值，平台本身不校验）。
 4. 安全遍历内层 tar，不把成员路径直接提取到文件系统。
 5. 扫描所有文件类型和 ELF 机器号。
 6. 确认只有一个目标架构，不包含 Mach-O/PE。

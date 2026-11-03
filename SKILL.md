@@ -17,24 +17,25 @@ python3 "$SKILL_DIR/scripts/fpk.py" --help
 ## Route the request
 
 1. Read [references/official-contract.md](references/official-contract.md) before creating or changing an fnOS package structure, manifest, lifecycle script, wizard, privilege, resource, UI entry, CGI, or gateway configuration.
-2. Read [references/build-and-architecture.md](references/build-and-architecture.md) before cross-building, applying architecture overlays, choosing `platform`, or packaging Go, Rust, Node, Python, Docker, or other native dependencies.
-3. Read [references/docker-app-flow.md](references/docker-app-flow.md) before building or debugging a Docker Web FPK that must support AppCenter open/start/stop, port configuration, HTTP access, or lifecycle-managed Docker Compose.
-4. Read [references/native-web-port-flow.md](references/native-web-port-flow.md) before building or debugging a native Web FPK whose AppCenter settings wizard changes management/proxy ports and must keep `config_init`、`config_callback`、`ui/config`、AppCenter `config/detail` and runtime listeners in sync.
-5. Read [references/go-native-service-flow.md](references/go-native-service-flow.md) before building a Go native service FPK whose frontend is embedded (`go:embed` or a bundled `web/` directory), when doing high-frequency iteration deploys (binary hot-swap, in-place upgrade through the AppCenter daemon RPC, version judgment from the running process), or when the project ships x86-only by convention.
-6. Read [references/vm-app-flow.md](references/vm-app-flow.md) before building or debugging a **libvirt/KVM-backed FPK** (the app creates or manages a virtual machine) or any app with a 7×24 resident entry port that must track a changing VM address. It covers the ~190-second install-callback watchdog and the fast-return pattern, the platform's real lifecycle semantics, VM disk/NIC identity, address discovery gates, serial-console recovery, and reverse-proxy link rewriting.
-7. Read [references/offline-and-live-testing.md](references/offline-and-live-testing.md) before writing regression tests for lifecycle/entry logic, before concluding a root cause from device behavior, or when asked to prove a fix with evidence (including screen recordings).
-8. Read [references/ci-release.md](references/ci-release.md) before authoring or changing release automation. Start from `assets/github-actions/fpk.yml` when it fits the project.
-9. Read [references/public-release-hygiene.md](references/public-release-hygiene.md) before publishing to a public GitHub/FnDepot repository or uploading Release assets.
-10. Read [references/remote-testing.md](references/remote-testing.md) before connecting to a device, installing, replacing, rolling back, collecting logs, or running smoke tests.
-11. Read [references/install-runbook.md](references/install-runbook.md) when repeatedly test-installing an app on one device — the concrete `stop → uninstall → install → start` cycle, what each step really prints, backup duties per app type, five-dimension post-install verification, rollback, and the error-code table. Its placeholders are `<NAS_IP>` / `<app>` / `<port>`; keep it desensitized. For the executable version use `assets/install-runbook/reinstall.sh` (parameterized, wizard/env preflight, uninstall postcondition gate, `DRY_RUN`).
-12. Read [references/appcenter-state-db-runbook.md](references/appcenter-state-db-runbook.md) when AppCenter status, DB URL, `ui/config`, wizard回显, Docker/进程状态, or the Open button disagree.
-13. Read [references/temporary-remote-patches.md](references/temporary-remote-patches.md) before applying runtime/debug patches on an installed device, and record rollback instructions.
-14. Read [references/security.md](references/security.md) before accepting root privilege, CGI/gateway exposure, secrets, symlinks, or unusual archive content.
-15. For final release polish of desktop icons, follow [references/official-contract.md#图标与发布检查](references/official-contract.md) and use `scripts/icon_fit.py --style fnos-squircle`: the official fnOS corner is a continuous-curvature squircle curve (profile embedded in the script, user-verified on a real package on 2026-09-06), NOT a plain circular arc — the legacy `fnos-rounded-dark` (64 `r=20` / 256 `r=80`) looks "rounder" than official and was rejected. **Feed a full-bleed source**: `contain_square()` fits without cropping, so artwork margins show up as an inset tile (re-verified 2026-09-15: output profile matches the official icon exactly — mid-row delta 0, `x=0` opaque rows 125/256 on both). Four corner alphas must be `0`; sync root-level and `ui/images/` (plus `app/ui/images/` if present); validate via profile diff + outline overlay + real desktop-scale comparison; warn about the 7-day `immutable` icon cache on user devices.
-16. Read [references/entry-icon-design.md](references/entry-icon-design.md) when designing or redesigning the **artwork of an entry icon itself** — especially thin-line, letter-derived, or transparent-background marks that must stay readable at ~52px — before touching pixels: sketch-to-spec verification, stroke hierarchy, per-slot optical redraw, dual light/dark inks, and the 64/32/16 gates.
-17. Read [references/troubleshooting.md](references/troubleshooting.md) only when a command, build, install, start, or validation step fails.
+2. Read [references/entry-and-gateway.md](references/entry-and-gateway.md) before choosing or debugging a desktop entry — independent port vs **unified gateway (Unix socket)** vs **CGI** vs file association. It covers the socket filename → `${TRIM_APPDEST}` resolution, socket permissions, the fact that the gateway does **not** strip `/app/<appname>`, identity headers, multi-entry rules, and the DB/curl/browser acceptance commands.
+3. Read [references/build-and-architecture.md](references/build-and-architecture.md) before cross-building, applying architecture overlays, choosing `platform`, or packaging Go, Rust, Node, Python, Docker, or other native dependencies.
+4. Read [references/docker-app-flow.md](references/docker-app-flow.md) before building or debugging a Docker Web FPK that must support AppCenter open/start/stop, port configuration, HTTP access, or lifecycle-managed Docker Compose.
+5. Read [references/native-web-port-flow.md](references/native-web-port-flow.md) before building or debugging a native Web FPK whose AppCenter settings wizard changes management/proxy ports and must keep `config_init`、`config_callback`、`ui/config`、AppCenter `config/detail` and runtime listeners in sync.
+6. Read [references/go-native-service-flow.md](references/go-native-service-flow.md) before building a Go native service FPK whose frontend is embedded (`go:embed` or a bundled `web/` directory), when doing high-frequency iteration deploys (binary hot-swap, in-place upgrade through the AppCenter daemon RPC, version judgment from the running process), or when the project ships x86-only by convention.
+7. Read [references/vm-app-flow.md](references/vm-app-flow.md) before building or debugging a **libvirt/KVM-backed FPK** (the app creates or manages a virtual machine) or any app with a 7×24 resident entry port that must track a changing VM address. It covers the ~190-second install-callback watchdog and the fast-return pattern, the platform's real lifecycle semantics, VM disk/NIC identity, address discovery gates, serial-console recovery, and reverse-proxy link rewriting.
+8. Read [references/offline-and-live-testing.md](references/offline-and-live-testing.md) before writing regression tests for lifecycle/entry logic, before concluding a root cause from device behavior, or when asked to prove a fix with evidence (including screen recordings).
+9. Read [references/ci-release.md](references/ci-release.md) before authoring or changing release automation. Start from `assets/github-actions/fpk.yml` when it fits the project.
+10. Read [references/public-release-hygiene.md](references/public-release-hygiene.md) before publishing to a public GitHub/FnDepot repository or uploading Release assets.
+11. Read [references/remote-testing.md](references/remote-testing.md) before connecting to a device, installing, replacing, rolling back, collecting logs, or running smoke tests.
+12. Read [references/install-runbook.md](references/install-runbook.md) when repeatedly test-installing an app on one device — the concrete `stop → uninstall → install → start` cycle, what each step really prints, backup duties per app type, five-dimension post-install verification, rollback, and the error-code table. Its placeholders are `<NAS_IP>` / `<app>` / `<port>`; keep it desensitized. For the executable version use `assets/install-runbook/reinstall.sh` (parameterized, wizard/env preflight, uninstall postcondition gate, `DRY_RUN`).
+13. Read [references/appcenter-state-db-runbook.md](references/appcenter-state-db-runbook.md) when AppCenter status, DB URL, `ui/config`, wizard回显, Docker/进程状态, or the Open button disagree.
+14. Read [references/temporary-remote-patches.md](references/temporary-remote-patches.md) before applying runtime/debug patches on an installed device, and record rollback instructions.
+15. Read [references/security.md](references/security.md) before accepting root privilege, CGI/gateway exposure, secrets, symlinks, or unusual archive content.
+16. For final release polish of desktop icons, follow [references/official-contract.md#图标与发布检查](references/official-contract.md) and use `scripts/icon_fit.py --style fnos-squircle`: the official fnOS corner is a continuous-curvature squircle curve (profile embedded in the script, user-verified on a real package on 2026-09-06), NOT a plain circular arc — the legacy `fnos-rounded-dark` (64 `r=20` / 256 `r=80`) looks "rounder" than official and was rejected. **Feed a full-bleed source**: `contain_square()` fits without cropping, so artwork margins show up as an inset tile (re-verified 2026-09-15: output profile matches the official icon exactly — mid-row delta 0, `x=0` opaque rows 125/256 on both). Four corner alphas must be `0`; sync root-level and `ui/images/` (plus `app/ui/images/` if present); validate via profile diff + outline overlay + real desktop-scale comparison; warn about the 7-day `immutable` icon cache on user devices.
+17. Read [references/entry-icon-design.md](references/entry-icon-design.md) when designing or redesigning the **artwork of an entry icon itself** — especially thin-line, letter-derived, or transparent-background marks that must stay readable at ~52px — before touching pixels: sketch-to-spec verification, stroke hierarchy, per-slot optical redraw, dual light/dark inks, and the 64/32/16 gates.
+18. Read [references/troubleshooting.md](references/troubleshooting.md) only when a command, build, install, start, or validation step fails.
 
-18. For a worked end-to-end example in one of the three app classes (Docker Web, native Web port loop, VM-backed), read `references/case-studies.md` — the delivered chain, the dead ends that were ruled out, and the acceptance checklist.
+19. For a worked end-to-end example in one of the three app classes (Docker Web, native Web port loop, VM-backed), read `references/case-studies.md` — the delivered chain, the dead ends that were ruled out, and the acceptance checklist.
 
 ## Follow the core workflow
 
@@ -57,6 +58,18 @@ python3 "$SKILL_DIR/scripts/fpk.py" --help
      --overlay-amd64 /absolute/path/to/amd64-overlay \
      --overlay-arm64 /absolute/path/to/arm64-overlay
    ```
+
+   Only one architecture (for example an ARM-only release) is the same command with a single target:
+
+   ```bash
+   python3 "$SKILL_DIR/scripts/fpk.py" build \
+     --project /absolute/path/to/package \
+     --out /absolute/path/to/dist \
+     --arch arm64 \
+     --overlay-arm64 /absolute/path/to/arm64-overlay
+   ```
+
+   This emits `...-fnos-arm64.fpk` plus `.sha256`, rewrites the staged manifest to `platform=arm`, and requires the payload's native binaries to be `EM_AARCH64` (machine 183). Use `--arch amd64` for x86-only, or `--arch all` only when there is no architecture-specific binary. Never ship an x86 overlay as an ARM package.
 
 6. Inspect every final artifact independently:
 
@@ -126,12 +139,14 @@ Run a command with `--help` instead of guessing an option. Exit codes are `0` fo
 
 ## Validate changes to this skill
 
-Run the complete local suite:
+Run the complete local gate (sanitize → compile → CLI surface → full suite → diff check):
 
 ```bash
-python3 -m unittest discover -s tests -v
+sh tests/ci.sh
 VALIDATOR="${CODEX_SKILL_CREATOR_DIR:-$HOME/.codex/skills/.system/skill-creator}/scripts/quick_validate.py"
 python3 "$VALIDATOR" .
 ```
+
+`tests/test_contract.py` pins the command/field contract (and mutates copies to prove the checks are not vacuous); `tests/test_docs.py` pins routing, anchors and secret hygiene.
 
 When `FNPACK_BIN` points to verified fnpack 1.2.3, the integration suite must build real native and Docker fixtures. For substantial revisions, run the clean-room prompts and rubric in `evals/` with fresh agents and compare them with a no-skill baseline.

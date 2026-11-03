@@ -448,8 +448,9 @@ def _validate_icon(name: str, data: bytes, report: Report) -> None:
             report.error(f"{detail}; smaller than official, AppCenter upscales and the tile looks soft")
         else:
             report.warn(
-                f"{detail}; AppCenter accepts a larger square (192 and 256 observed "
-                "shipping fine), but the official pair stays 64/256"
+                f"{detail}; AppCenter accepts a larger square. If you follow the "
+                "all-slots >=512 HD recipe (official-contract, icon clarity section) "
+                "this is expected and can be ignored; otherwise the official pair is 64/256"
             )
     corner_alpha = _png_corner_alpha(data)
     if corner_alpha is not None:
@@ -557,6 +558,75 @@ def _validate_entry_ports(
         )
 
 
+def _validate_entry_routes(
+    raw: bytes, manifest_values: dict[str, str], origin: str, report: Report
+) -> None:
+    """Static checks for desktop-entry routing: gateway, CGI and entry type.
+
+    The platform imports these entries into ``app_service`` at install time, so a
+    typo becomes a dead desktop icon that no later build step would catch.
+    """
+
+    entries = _parse_url_table(raw)
+    if not entries:
+        return
+    appname = str(manifest_values.get("appname") or "").strip()
+    for entry_id, entry in entries.items():
+        if not isinstance(entry, dict):
+            continue
+        prefix = entry.get("gatewayPrefix")
+        sock = entry.get("gatewaySocket")
+        url = entry.get("url")
+        entry_type = entry.get("type")
+
+        if entry_type not in (None, "", "iframe", "url"):
+            report.warn(f"{origin}: entry {entry_id!r} has unknown type {entry_type!r}")
+        if prefix and not sock:
+            report.error(f"{origin}: entry {entry_id!r} sets gatewayPrefix without gatewaySocket")
+        if sock and not prefix:
+            report.error(f"{origin}: entry {entry_id!r} sets gatewaySocket without gatewayPrefix")
+        if prefix:
+            text = str(prefix)
+            if not text.startswith("/app/"):
+                report.error(f"{origin}: entry {entry_id!r} gatewayPrefix {text!r} must start with /app/")
+            if any(char.isspace() for char in text) or ".." in text:
+                report.error(f"{origin}: entry {entry_id!r} gatewayPrefix {text!r} is not a clean path")
+            if text.endswith("/"):
+                report.warn(
+                    f"{origin}: entry {entry_id!r} gatewayPrefix {text!r} has a trailing slash; "
+                    "write it as /app/<name> and keep the slash only in url"
+                )
+            if appname and text.rstrip("/") != f"/app/{appname}":
+                report.warn(
+                    f"{origin}: entry {entry_id!r} gatewayPrefix {text!r} differs from /app/{appname}; "
+                    "the icon will open that path, so the gateway must be declared under it"
+                )
+            if isinstance(url, str) and url and not url.startswith(text.rstrip("/")):
+                report.warn(
+                    f"{origin}: entry {entry_id!r} url {url!r} is outside gatewayPrefix {text!r}; "
+                    "the gateway only routes paths under the prefix"
+                )
+        if sock:
+            name = str(sock)
+            if "/" in name or name.startswith(".") or ".." in name:
+                report.error(
+                    f"{origin}: entry {entry_id!r} gatewaySocket {name!r} must be a bare filename "
+                    "created inside ${TRIM_APPDEST}"
+                )
+            elif not name.endswith(".sock"):
+                report.warn(f"{origin}: entry {entry_id!r} gatewaySocket {name!r} does not end with .sock")
+        if isinstance(url, str) and "/cgi/ThirdParty/" in url and appname:
+            match = re.search(r"/cgi/ThirdParty/([^/]+)/", url)
+            if match and match.group(1) != appname:
+                report.warn(
+                    f"{origin}: entry {entry_id!r} CGI path targets {match.group(1)!r} "
+                    f"but manifest appname is {appname!r}"
+                )
+        file_types = entry.get("fileTypes")
+        if file_types is not None and not isinstance(file_types, list):
+            report.error(f"{origin}: entry {entry_id!r} fileTypes must be a list")
+
+
 def _validate_entry_icons(
     icons: list[tuple[str, str]],
     exists: Callable[[str], bool],
@@ -565,12 +635,14 @@ def _validate_entry_icons(
 ) -> None:
     """Require every desktop-entry icon path to resolve to a shipped file.
 
-    The platform requests ``<prefix>_{0}.png`` for *every* rendered size and
-    resolves ``{0}`` to the fallback slot ``<prefix>_0.png``, so the desktop
-    tile and the application-list row read the same file and ``_64``/``_128``
-    are never fetched. A ``{0}`` template without that fallback ships an icon
-    that silently never appears (observed on upstream packages), while the
-    official contract still asks for the 64 and 256 variants to exist.
+    The platform requests ``<prefix>_{0}.png`` and resolves ``{0}`` to the
+    fallback slot ``<prefix>_0.png``, so the desktop tile and the
+    application-list row read the same file. A ``{0}`` template without that
+    fallback ships an icon that silently never appears (observed on upstream
+    packages). The 64/256 variants are still required: the ``serviceicon``
+    endpoint serves those slots for ``?size=64|128|256`` and falls back to
+    ``_64`` for larger sizes (re-measured 2026-11-02), which is why the HD
+    recipe duplicates one >=512 master into every slot.
     """
 
     if not icons:
@@ -781,6 +853,7 @@ def inspect_project(
                 config_bytes, document.values.get("desktop_applaunchname"), origin, report
             )
             _validate_entry_ports(config_bytes, document.values, origin, report)
+            _validate_entry_routes(config_bytes, document.values, origin, report)
             ui_base = project / "app" / ui_dir
             _validate_entry_icons(
                 _entry_icon_fields(config_bytes, origin, report),
@@ -1108,6 +1181,9 @@ def inspect_fpk(
                                     report,
                                 )
                                 _validate_entry_ports(
+                                    ui_data, document.values, f"app/{ui_path}", report
+                                )
+                                _validate_entry_routes(
                                     ui_data, document.values, f"app/{ui_path}", report
                                 )
             except tarfile.TarError as exc:

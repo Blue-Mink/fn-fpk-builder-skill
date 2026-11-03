@@ -183,6 +183,9 @@ ICON_256.PNG
 - `data-share`：由系统创建并通过 Windows ACL 授权的共享目录。
 - `usr-local-linker`：把稳定的 bin、lib、etc 接口链接到 `/usr/local`。
 - `docker-project`：指向 `app/` 下含 `docker-compose.yaml` 的项目目录。
+- `systemd-unit`：应用自带 systemd 单元时声明（`{}` 即可，Moo / Moo Mate 都是空对象）。
+- `port-config`：`{"protocol-file": "<app>.sc"}`，把端口与转发策略交给平台读；协议文件常用 `port_forward="no"` 表示不做端口转发。
+- `api-scope`：可调用的飞牛 Open API scope 列表（如 `trim.app.center`、`trim.file.sharedAccess`）。**声明了平台才在启动时注入 `TRIM_API_TOKEN`**（43 字符），应用拿它免登录调 `/app-center/v1/*`；不声明就没有 token，调官方 API 必然 401/空体。只按实际能力声明，不要多写。
 
 只声明应用实际需要的资源，资源名应跨版本稳定。
 
@@ -201,7 +204,7 @@ CGI 入口：
 
 - `gatewayPrefix` 使用 `/app/{appname}` 或其稳定子路径。
 - `gatewaySocket` 只写 socket 文件名；服务在 `${TRIM_APPDEST}` 创建它。
-- 系统验证会话后转发到 Unix Socket。
+- 系统验证会话后转发到 Unix Socket；**网关不改写路径**，应用收到的是含 `/app/<appname>` 的完整路径。
 - 身份 Header 为 `X-Trim-Userid`、`X-Trim-Isadmin`、`X-Trim-Username`。
 - 网关只提供已登录身份，业务权限仍由应用验证。
 - HTTP 和 WebSocket 路由都应保持在声明的前缀下。
@@ -214,7 +217,7 @@ CGI 入口：
 
 条目字段：`title`、`desc`、`icon`（`images/ICON.PNG` 或 `images/icon_{0}.png`，后者要求 64/256 文件都在）、`type`（`iframe` | `url`）、`protocol` + `port` + `url`、`noDisplay`（`false` 才显示）、`allUsers`、`fileTypes`、`control.accessPerm`。
 
-`type=url` + `port` 拼出 `http://${host}:{port}{path}` **顶层打开**（新窗口）；`type=iframe` 在飞牛窗口内嵌。选型要点（2026-09-13 门户类应用实测教训）：
+`type=url` + `port`（**字符串**）拼出 `http://${host}:{port}{path}` **顶层打开**（新窗口）；`type=iframe` 在飞牛窗口内嵌。选型要点（2026-09-13 门户类应用实测教训）：
 
 - 目标是**明文 http 服务端口**时**必须用 `type=url` 直连**——用户经 https 访问飞牛桌面时，iframe 内嵌 http 会被按混合内容拦截（症状：入口“局域网打不开”/空白）；顶层导航不受此限制。
 - `type=iframe` 适合同源 CGI 路径（`/cgi/ThirdParty/<app>/index.cgi/...`），窗口标题栏跟随页面 `document.title`（同源可读）；跨源 iframe 读不到 title，保持入口 `title`。
@@ -227,7 +230,7 @@ psql -h /var/run/postgresql -d appcenter -U postgres -tAc \
   "SELECT s.service_name, s.title, s.url FROM app_service s, app a WHERE a.id=s.app_id AND a.app_name='<appname>'"
 ```
 
-`fpk.py inspect` 还会静态核对入口与 manifest 是否一致：没有任何 `.url` 条目用到 `service_port`（点开按钮会指向没人监听的端口）、或 `checkport=true` 与常驻入口端口并存（启动前端口检查永远过不去，实测 `error 11000`）都会告警。
+`fpk.py inspect` 还会静态核对入口与 manifest 是否一致：没有任何 `.url` 条目用到 `service_port`（点开按钮会指向没人监听的端口）、或 `checkport=true` 与常驻入口端口并存（启动前端口检查永远过不去，实测 `error 11000`）都会告警；网关/CGI 的字段也会查（`gatewayPrefix` 必须以 `/app/` 开头、`gatewaySocket` 只能写文件名、两者必须成对、CGI 路径里的 appname 必须与 manifest 一致、`fileTypes` 必须是数组），完整清单见 [entry-and-gateway.md](entry-and-gateway.md)。
 
 停用不会回收这些行：入口是静态桌面条目，与应用进程无关，`appcenter-cli stop` 之后点开入口只会
 撞反代失败页。想在停用时隐藏入口，见 `appcenter-state-db-runbook.md` 的「应用停用后桌面入口还在」
@@ -235,10 +238,14 @@ psql -h /var/run/postgresql -d appcenter -U postgres -tAc \
 
 ## 向导、依赖和运行时
 
-四种向导文件为 `install`、`upgrade`、`uninstall`、`config`，内容都是步骤数组。字段值会作为同名环境变量交给生命周期脚本。
+四种向导文件为 `install`、`upgrade`、`uninstall`、`config`，内容都是步骤数组
+（`[{"stepTitle": "...", "items": [...]}]`）。字段值会作为**同名环境变量**交给生命周期脚本。
 
-- 自定义字段建议使用 `wizard_` 前缀。
-- 不要使用系统保留的 `TRIM_` 前缀。
+- item 通用字段：`type`、`field`、`label`、`initValue`（字符串）、`options`、`rules`、`helpText`；类型为 `text` `password` `radio` `checkbox` `select` `switch` `tips`。
+- 自定义字段建议使用 `wizard_` 前缀；不要使用系统保留的 `TRIM_` 前缀。
+- `wizard/uninstall` 的 `wizard_delete_data`（`radio`，`false`=保留数据）决定用户能否选择删除数据；**没有这个字段，卸载脚本里的删除分支永远不会执行**——不要在文档里写「卸载一定清空/一定保留」。
+- `TRIM_OLD_APPVER` 只在 `upgrade` 生命周期里出现；`config_init` 必须回显**当前真实值**，不能只写死 `initValue`。
+- 带卸载向导的应用，CLI `appcenter-cli uninstall` 可能被拒（`code 10150` = 本地应用禁止卸载），改走 daemon socket `POST /rpc/v1/uninstall/task`，请求体 `{"wizard_delete_data": false}`（保留数据）再轮询状态。
 - 密钥使用 `password` 类型，但脚本仍不得记录该值。
 - UI 校验不是安全边界，生命周期脚本必须再次校验。
 
@@ -261,14 +268,15 @@ psql -h /var/run/postgresql -d appcenter -U postgres -tAc \
 - 圆角验证不能只看 alpha 数据，至少做三项：① 左缘剖面与官方剖面逐行对比（LANCZOS 抗锯齿会让首/末行的阈值边缘外扩几像素，属预期；中间行最大差应 ≤2px）；② 轮廓叠加：两图标 alpha 边界分用红/绿描边叠到同一画布，四角应基本重合；③ 从同一张飞牛桌面截图裁出两个磁贴（实际 48px 尺寸放大 ×6）并排目检。
 - 圆角处理后同步覆盖根级 `ICON.PNG`、`ICON_256.PNG`，以及 UI 入口图标 `ui/images/icon_64.png`、`ui/images/icon_256.png`、`ui/images/icon_0.png`、`ui/images/icon_0_256.png`（有 GIF 动图版本时同步）；若项目同时维护 `app/ui/images/`，也要同步覆盖，避免源码、payload 和 AppCenter 桌面入口不一致。
 - 换图标后必须提醒用户：飞牛桌面图标 URL 带 `Cache-Control: max-age=604800 immutable`（7 天不可变缓存），已缓存设备会继续显示旧图标，需浏览器强刷（Ctrl+Shift+R）或 App 重新登录才可见新版。验证部署时以服务端 `md5sum /vol1/@appcenter/<app>/ui/images/icon_0_256.png` 为准，不要以用户端截图为准。
-#### 入口图标：哪个槽位真的被取用（2026-09-23 nginx 取证）
+#### 入口图标：槽位取用（2026-09-23 nginx 取证；2026-11-02 订正）
 
-`app_service.icon` 只有**一个**字段，平台全站一律按 `…/xxx_%7B0%7D.png?size=256` 请求，`{0}` 由服务端解析成
-**兜底槽位 `icon_0.png`**：
+`app_service.icon` 只有**一个**字段，平台按 `…/xxx_%7B0%7D.png?size=N` 请求，`{0}` 由服务端解析成
+**兜底槽位 `icon_0.png`**；入口 `icon` 直接写固定文件名（如 `images/ICON.PNG`，没有 `{0}` 占位）时按该文件取。
 
-- **桌面大图标与应用列表小图标同源**，`icon_64` / `icon_128` 平台根本不请求 → 小图标发虚只能改 `icon_0`。
-- 想“大图标细线条 + 小图标实心”做不到，只能选一个折中；真要清晰，小图标走实心砖式构图。
-- 兜底槽位给 512 或 1024 都不会变清晰：**桌面显示尺寸约 52px**，瓶颈是显示尺寸下的墨量，不是文件分辨率。
+- **桌面大图标与应用列表小图标同源**：`{0}` 路径下两者都落在 `icon_0`，小图标发虚先改它。
+- **2026-11-02 订正**：`serviceicon/...?size=64|128|256` 会取对应槽位，`size>=512`（或不带 size）**回落 `icon_64`** —— 所以「只改 `icon_0`」覆盖不了全部路径。现行做法是**全槽位铺同一张 ≥512 母版**（见下一节），两条通道一起满足。
+- 想“大图标细线条 + 小图标实心”在单图标字段下做不到，只能选一个折中；真要清晰，小图标走实心砖式构图。
+- **分辨率不等于观感**：桌面磁贴约 52px，细线 logo 在 52px 下墨量不足仍会「发灰」；把槽位抬到 512 解决的是详情弹窗与高分屏的像素密度，不会自动让 52px 变实——两件事都要做（全槽位 ≥512 + 按显示尺寸加墨量）。
 - 实测判据：把成品缩到 52px 后统计**半透明墨像素占比**（`0<alpha<250` 占全部墨像素）。细线 logo ≈75~80% ⇒ 肉眼
   “发灰/虚”；实心砖 ≈6.5%。对照实验里 64×64 的第三方图标比 512×512 的细线 logo 看起来更清晰。
 - **已实测无效的杠杆**：源图 alpha 硬边化、降低原生分辨率、预锐化、alpha gamma 偏置、加低对比底衬。
@@ -300,12 +308,16 @@ psql -h /var/run/postgresql -d appcenter -U postgres -tAc \
 ui/images/icon_0.png / icon_64.png / icon_128.png / icon_256.png / icon_512.png
 ```
 
+大写命名的项目（Moo 等）入口是 `ui/images/ICON.PNG` / `ICON_256.PNG` / `ICON_64.PNG`
+（`ui/config` 的 `icon` 写 `images/ICON.PNG`，没有 `{0}` 占位）——这类项目把这三个槽位同样铺成
+**同一张 ≥512 母版**，不要只改 `icon_{0}` 那套命名，否则桌面换新、入口仍旧图。
+
 这样服务端无论走哪条通道、取哪个槽位、传什么 size，拿到的都是同一张大图，由前端自己缩放 → 全场景清晰。走动画图标的（桌面取 `icon_0.gif`、列表/弹窗仍取 png），gif 与 png 两套都要同步高清化。
 **不要再按「ICON=64 / ICON_256=256」分别降采样**（官方规格 64/256 是下限不是高清目标；分开降采样会让详情弹窗糊）。
 
 验证：① curl 直测两条通道，serviceicon `size=64/256/512` 与 `icon.png` 都应返回同一张 ≥512；② 浏览器清缓存强刷后，详情弹窗 `icon.png` 的 `naturalWidth` 应从 64 变 512、桌面图标从 256 变 512。
 
-**第三条路：商店索引（`fnpack.json` 的 `icon_url`）**。商店卡片图标走的是清单索引文件里 app 条目的 `icon_url` 字段（指向仓库树内 `<app>/ICON.PNG` 的 raw 直链），与装机后的桌面/弹窗图标是**两套独立文件**。树内惯例 `<app>/ICON.PNG`=64、`<app>/ICON_256.PNG`=256（同样是官方规格下限，不是高清目标）。高清化 = 把**树内这两个文件都换成同一张 ≥512 母版**，`icon_url` 字段本身不用改（路径不变，改的是文件内容）；否则商店卡片图标仍糊。换完推送后商店客户端通常有本地缓存，需让用户「检查更新」/刷新（不自动刷源）。
+**第三条路：商店索引（清单索引 `moo.json` / `fnpack.json` 的 `icon_url`）**。商店卡片图标走的是清单索引文件里 app 条目的 `icon_url` 字段（指向仓库树内 `<app>/ICON.PNG` 的 raw 直链），与装机后的桌面/弹窗图标是**两套独立文件**。树内惯例 `<app>/ICON.PNG`=64、`<app>/ICON_256.PNG`=256（同样是官方规格下限，不是高清目标）。高清化 = 把**树内这两个文件都换成同一张 ≥512 母版**，`icon_url` 字段本身不用改（路径不变，改的是文件内容）；否则商店卡片图标仍糊。换完推送后商店客户端通常有本地缓存，需让用户「检查更新」/刷新（不自动刷源）。
 
 设备侧批量热改可用一段通用脚本（泛化变量）：把母版 LANCZOS 到 512，铺满 `根 ICON.PNG` + `根 ICON_256.PNG` + `ui/images` 五槽位，并按原文件保留属主/权限；根目录在 `/var/apps/<app>/`，payload 槽位在 `/vol1/@appcenter/<app>/ui/images/`。
 
@@ -342,6 +354,7 @@ appcenter-cli stop myapp
 实测补充：
 
 - `--env` 接收的是**环境变量文件路径**（每行 `KEY=VALUE`），不是 `key=value` 字符串。传字符串会得到 `[Error]Something wrong with environment variables.`（内部报 `error while binding environment variable`）。重装时这份 env 必须照抄首次装机那份，否则会静默改掉向导值（内存、磁盘、端口）。
+- `install` 与 `install-fpk` **不是一回事**：`appcenter-cli install <appname>` 只按应用名从商店/仓库来源安装，传本地 `.fpk` 路径会失败；本地包必须 `appcenter-cli install-fpk <fpk>`。
 - 还可用（设备观测）：`appcenter-cli status <app>`、`appcenter-cli uninstall <app>`、`appcenter-cli install-fpk <fpk> --volume <N> --env <file>`。
 - `appcenter-cli` 在设备上位于 `/usr/local/bin/`（PATH 可直接调用），且**必须以 root 运行**：非 root 会 `panic: ApplyPermission … dial unix /run/trim_cgi/rpcbroker: permission denied`。
 - `start` 对已在运行的应用报 `error 10500`（平台在 install 后已自动 `APP_STARTED`），属预期，不要重试。

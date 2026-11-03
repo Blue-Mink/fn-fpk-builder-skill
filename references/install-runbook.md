@@ -26,7 +26,7 @@
 | **`start` 报 `code 10500` 不是失败**：`install-fpk` 完成后平台已自动拉起，10500 = 已在运行。判成败只看 `status`、端口与 HTTP | 把它当失败去重试会掩盖真实状态 |
 | **卸载前先备份**。删不删数据按应用类型分裂，不能假设 | 见[备份](#备份)三分类 |
 
-`appcenter-cli` 必须 root 运行，否则 `panic: ApplyPermission … dial unix /run/trim_cgi/rpcbroker: permission denied`（它在 `/usr/local/bin/appcenter-cli`）。子命令全集：`install / uninstall / start / stop / check / status / list / install-fpk / install-local / manual-install / default-volume`。
+`appcenter-cli` 必须 root 运行，否则 `panic: ApplyPermission … dial unix /run/trim_cgi/rpcbroker: permission denied`（它在 `/usr/local/bin/appcenter-cli`）。子命令全集：`install / uninstall / start / stop / check / status / list / install-fpk / install-local / manual-install / default-volume`。其中 `install` 只按**应用名**从商店/仓库来源安装，**不接受本地 `.fpk` 路径**；本地包一律用 `install-fpk`（交互式向导是 `install-local`）。
 
 **不要只依赖退出码**：实测某些失败仍返回 0。同时解析输出里的 `[Error]`、`noinstall`、状态文本。
 

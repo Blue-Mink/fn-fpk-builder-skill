@@ -126,7 +126,7 @@ tail -n 200 /var/log/trim_app_center/error.log
 
 先跑 `python3 scripts/fpk.py inspect <项目目录或 .fpk>`：`ui/config` 里每个入口的 `icon` 是否解析得到实际文件、`desktop_applaunchname` 是否有同名 `.url` 条目，都已由它自动核对（项目树与最终包两条路径都查）。
 
-手工排查顺序：manifest 的 `desktop_uidir`、`desktop_applaunchname`、入口 ID、UI config 是否合法 JSON，以及 `icon` 字段真正指向的文件。注意 `images/icon_{0}.png` 这种模板里，平台**只按 `{0}` 兜底槽取图**（即 `icon_0.png`，桌面与列表同源）；只放 `icon_64/256` 而漏掉 `icon_0.png` 是上游包常见的坑——图标永远不显示，但 fnpack 打包不会报错。
+手工排查顺序：manifest 的 `desktop_uidir`、`desktop_applaunchname`、入口 ID、UI config 是否合法 JSON，以及 `icon` 字段真正指向的文件。注意 `images/icon_{0}.png` 这种模板里，`{0}` 会解析成 `icon_0.png`（桌面与列表同源），漏掉它图标就永远不显示，而 fnpack 打包不会报错；同时 `serviceicon` 通道在 `?size=64|128|256` 时会取对应槽位、更大尺寸回落 `icon_64`（2026-11-02 实测），所以**全槽位都要铺同一张 ≥512 母版**，详见 `official-contract.md` 的「图标清晰度」。
 
 ### CGI 返回 404
 

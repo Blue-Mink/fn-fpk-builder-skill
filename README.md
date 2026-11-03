@@ -12,7 +12,7 @@
   <img alt="macOS and Linux" src="https://img.shields.io/badge/host-macOS%20%7C%20Linux-555555?logo=apple&logoColor=white">
   <img alt="amd64 and arm64" src="https://img.shields.io/badge/target-amd64%20%7C%20arm64-6F42C1">
   <img alt="AI Agent native" src="https://img.shields.io/badge/AI-Agent--native-FF6B6B">
-  <img alt="63 tests passing" src="https://img.shields.io/badge/tests-63%20passing-brightgreen">
+  <img alt="tests passing" src="https://img.shields.io/badge/tests-passing-brightgreen">
   <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/license-MIT-blue"></a>
 </p>
 
@@ -104,7 +104,7 @@ python3 scripts/fpk.py inspect \
 
 先修复所有 `errors`，再评估 `warnings` 是否符合应用真实需求。
 
-### 4. 构建双架构 FPK
+### 4. 构建双架构 / 单架构 FPK
 
 假设公共 FPK 项目位于 `./package`，两个目录中已经放好对应架构的应用产物：
 
@@ -117,6 +117,28 @@ python3 scripts/fpk.py build \
   --overlay-arm64 ./artifacts/arm64 \
   --json
 ```
+
+只构建 ARM（或只构建 x86）时用单目标，overlay 只传对应架构：
+
+```bash
+# ARM64 单架构：产物 ...-fnos-arm64.fpk，manifest platform=arm，ELF 必须 EM_AARCH64(183)
+python3 scripts/fpk.py build \
+  --project ./package \
+  --out ./dist/fpk \
+  --arch arm64 \
+  --overlay-arm64 ./artifacts/arm64 \
+  --json
+
+# x86 单架构：产物 ...-fnos-amd64.fpk，manifest platform=x86
+python3 scripts/fpk.py build \
+  --project ./package \
+  --out ./dist/fpk \
+  --arch amd64 \
+  --overlay-amd64 ./artifacts/amd64 \
+  --json
+```
+
+`--arch` 只接受 `amd64` / `arm64` / `all` / `both`；写 `x86` 或 `arm` 会被参数校验拒绝。单架构包同样要跑 `inspect --target-arch arm64|amd64`，确认 `detected_elf_architectures` 与目标一致。
 
 输出命名固定为：
 
@@ -531,12 +553,19 @@ flowchart LR
 
 所有 GitHub Actions 均固定到完整提交 SHA，不依赖 runner 恰好存在的工具。
 
+本仓自身的 [.github/workflows/ci.yml](.github/workflows/ci.yml) 有两个 job：
+
+1. `docs`（秒级）：`tests/sanitize.py` 脱敏门 + `tests/test_contract.py` / `tests/test_docs.py` 契约与路由门。
+2. `test`（ubuntu + macOS 矩阵）：下载并校验固定版本的 fnpack，跑 CLI 面、全量单元/集成测试与 Skill Creator 校验。
+
+本地等价命令是 `sh tests/ci.sh`。
+
 ## 🧪 验证状态
 
 当前实现已经通过：
 
-- macOS arm64 连续两轮完整测试：每轮 `63/63`。
-- Linux amd64 clean-room：`63/63`。
+- macOS arm64 与 Linux amd64 完整套件全绿（测试数随套件增长，以 `unittest discover` 实际输出为准；其中真实 fnpack 集成用例需要 `FNPACK_BIN`，未设置时跳过）。
+- 契约门 `tests/test_contract.py` 与脱敏门 `tests/sanitize.py` 全绿，并带变异自测（故意写回旧命令/旧口径必须报错）。
 - 官方 native 与 Docker 模板真实 fnpack 构建。
 - amd64 与 arm64 FPK 的独立反向审计。
 - 错误架构、checksum 损坏、路径穿越、危险链接、敏感文件等负面测试。
@@ -579,6 +608,7 @@ python3 -m unittest discover -s tests -v
 | 文档 | 内容 |
 | --- | --- |
 | [官方契约](references/official-contract.md) | manifest、目录、生命周期、UI、wizard、权限与资源 |
+| [入口、统一网关与 CGI](references/entry-and-gateway.md) | 四种入口选型、socket 解析与权限、前缀不改写、身份头、多入口、验收命令与坑表 |
 | [构建与架构](references/build-and-architecture.md) | fnpack、staging、overlay、ELF 与语言接入 |
 | [CI 发布](references/ci-release.md) | 干净环境、多架构产物和 GitHub Actions |
 | [公开发布净化](references/public-release-hygiene.md) | GitHub/FnDepot 发布前排除测试报告、设备信息、日志和凭据 |

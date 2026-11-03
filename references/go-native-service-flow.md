@@ -59,7 +59,8 @@ cp "$BUILD_DIR/bin/app-server" "$STAGE/"
 cp -r "$SCRIPT_DIR/web/dist" "$STAGE/web"
 
 cd "$STAGE" && tar -czf "$BUILD_DIR/app.tgz" . && cd -
-# 用构建器（fpk.py build 或 fnpack pack）按 manifest checksum 打包
+# 用构建器（fpk.py build 或 fnpack build）按 manifest checksum 打包
+# 注意：fnpack 只有 build / create 两个子命令，没有 pack / crc32
 
 # ── Step 4: 产物命名 + sha256 ──
 cp <final.fpk> "$SCRIPT_DIR/app_${VERSION}_x86.fpk"
